@@ -1920,10 +1920,6 @@ if (isset($_GET['text'])) {
     try{
       btnStart.disabled = true;
 
-      if(withVoice){
-        await playText('aplikasi aktif');
-      }
-
       setActiveTab('presensi');
 
       renderSholatListPlaceholder();
@@ -1984,7 +1980,7 @@ if (isset($_GET['text'])) {
     if(activePlaybacks.size > 0){
       stopCurrentPlayback();
     }
-    try { await playText('aplikasi nonaktif'); fetchLogsAfterDelay(); } catch(e) {}
+    fetchLogsAfterDelay();
     started=false;
 
     if(intervalId){ clearTimeout(intervalId); intervalId=null; }
