@@ -1,4 +1,4 @@
-# Bot Ngomong Jam + Sholat (PHP)
+# Bot Ngomong Jam + Sholat (PHP) 🔊🕌
 
 Aplikasi web PHP satu file untuk pengingat suara otomatis:
 - pengumuman jam (`hourly`),
@@ -11,7 +11,7 @@ UI berjalan di browser, sementara server PHP menangani:
 - proxy jadwal salat (MyQuran),
 - logging aktivitas dan error client.
 
-## Fitur Utama
+## Fitur Utama ✨
 
 - Scheduler multi-event (jam, 30 menit, presensi, salat).
 - Tombol `Start/Stop` agar autoplay audio di browser aktif aman.
@@ -25,7 +25,7 @@ UI berjalan di browser, sementara server PHP menangani:
 - Rate limit endpoint TTS per IP (`8 request/menit` default).
 - Auto reload halaman dengan penghindaran bentrok event.
 
-## Stack
+## Stack 🛠️
 
 - PHP (native, tanpa framework)
 - JavaScript vanilla
@@ -35,7 +35,7 @@ UI berjalan di browser, sementara server PHP menangani:
   - Google Translate TTS
   - MyQuran jadwal salat
 
-## Struktur File
+## Struktur File 📁
 
 ```text
 jam/
@@ -50,7 +50,7 @@ jam/
 |- .gitignore
 ```
 
-## Cara Menjalankan (XAMPP)
+## Cara Menjalankan (XAMPP) 🚀
 
 1. Salin project ke:
    `C:\xampp\htdocs\jam`
@@ -59,7 +59,7 @@ jam/
    `http://localhost/jam/`
 4. Klik tombol `Start` sekali untuk mengaktifkan izin audio browser.
 
-## Endpoint Internal (di `index.php`)
+## Endpoint Internal (di `index.php`) 🔌
 
 - `?text=...&tl=id`
   - Proxy TTS, output `audio/mpeg`.
@@ -72,7 +72,7 @@ jam/
 - `?kagetlog=1&msg=...`
   - Simpan log event kaget ke `tts_activity.log`.
 
-## Konfigurasi Cepat
+## Konfigurasi Cepat ⚙️
 
 Konstanta penting di bagian atas `index.php`:
 
@@ -85,13 +85,17 @@ Lokasi jadwal salat saat ini hardcoded ke:
 - Kota: `Banyuwangi`
 - ID MyQuran: `1602`
 
-## Catatan Produksi
+## Catatan Produksi 🧩
+
+## Pembuat 👨‍💻
+
+- GitHub: [@wicaxvaganza](https://github.com/wicaxvaganza)
 
 - Pastikan ekstensi PHP `curl` aktif.
 - Pastikan folder `cache_adzan` bisa ditulis oleh web server.
 - Karena memakai sumber TTS publik, pertimbangkan retry/backoff dan pembatasan akses jika trafik tinggi.
 - Untuk stabilitas autoplay, tab browser sebaiknya tetap aktif.
 
-## Lisensi
+## Lisensi 📄
 
 Belum ditentukan. Tambahkan `LICENSE` sesuai kebutuhan sebelum dipublikasikan.
