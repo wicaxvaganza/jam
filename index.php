@@ -676,6 +676,21 @@ if (isset($_GET['text'])) {
       fetch(window.location.pathname+'?kagetlog=1&msg=' + encodeURIComponent(msg));
     }catch(_){}
   }
+  function logClient(msg){
+    try{
+      fetch(window.location.pathname+'?clientlog=1&msg=' + encodeURIComponent(msg));
+    }catch(_){}
+  }
+  function errMessage(err){
+    if(!err) return 'unknown error';
+    if(typeof err === 'string') return err;
+    if(err && typeof err.message === 'string' && err.message) return err.message;
+    try{
+      return JSON.stringify(err);
+    }catch(_){
+      return String(err);
+    }
+  }
 
   // === BEL: pakai file depan.mp3 (start) & belakang.mp3 (end) ===
   async function playBell(kind='start'){
@@ -726,6 +741,7 @@ if (isset($_GET['text'])) {
       const tid = setTimeout(()=>{
         if(settled) return;
         settled = true;
+        logClient(timeoutLabel);
         reject(new Error(timeoutLabel));
       }, timeoutMs);
       Promise.resolve()
@@ -759,7 +775,11 @@ if (isset($_GET['text'])) {
           activeTestPlayback = null;
         }
         try { if(typeof onFinish === 'function') onFinish(status); } catch(_) {}
-        if(status === 'error') reject(err || new Error('playback error'));
+        if(status === 'error'){
+          const em = errMessage(err);
+          logClient('playText error: '+em);
+          reject(err || new Error('playback error'));
+        }
         else resolve(status);
       };
 
@@ -830,7 +850,11 @@ if (isset($_GET['text'])) {
           activeTestPlayback = null;
         }
         try { if(typeof onFinish === 'function') onFinish(status); } catch(_) {}
-        if(status === 'error') reject(err || new Error('playback error'));
+        if(status === 'error'){
+          const em = errMessage(err);
+          logClient('playKaget error: '+em);
+          reject(err || new Error('playback error'));
+        }
         else resolve(status);
       };
 
