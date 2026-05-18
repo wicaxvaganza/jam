@@ -576,6 +576,10 @@ if (isset($_GET['text'])) {
   let fireRunBusy = false;
   let lastFireRunMinuteKey = null;
   const PLAYBACK_TIMEOUT_MS = 60000;
+  const HOLIDAY_CACHE_KEY_PREFIX = 'libur_nasional_v1_';
+  const HOLIDAY_CACHE_META_KEY_PREFIX = 'libur_nasional_meta_v1_';
+  const HOLIDAY_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  const nationalHolidayByYear = {};
 
   // Sholat state
   let sholatTimings=null; // semua waktu sholat & ekstra
@@ -932,6 +936,71 @@ if (isset($_GET['text'])) {
     base.setMinutes(base.getMinutes()+addMin);
     return `${String(base.getHours()).padStart(2,'0')}:${String(base.getMinutes()).padStart(2,'0')}`;
   }
+  function dateKeyLocal(dateObj){
+    const d = new Date(dateObj);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const dd = String(d.getDate()).padStart(2,'0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  function loadHolidayCacheYear(year){
+    try{
+      const raw = localStorage.getItem(HOLIDAY_CACHE_KEY_PREFIX + String(year));
+      if(!raw) return false;
+      const list = JSON.parse(raw);
+      if(!Array.isArray(list)) return false;
+      nationalHolidayByYear[year] = new Set(list.filter(x=>typeof x==='string'));
+      return true;
+    }catch(_){
+      return false;
+    }
+  }
+  function isHolidayCacheFreshYear(year){
+    try{
+      const raw = localStorage.getItem(HOLIDAY_CACHE_META_KEY_PREFIX + String(year));
+      if(!raw) return false;
+      const meta = JSON.parse(raw);
+      if(!meta || typeof meta.fetchedAt !== 'number') return false;
+      return (Date.now() - meta.fetchedAt) < HOLIDAY_CACHE_TTL_MS;
+    }catch(_){
+      return false;
+    }
+  }
+  function getHolidaySetYear(year){
+    if(!(nationalHolidayByYear[year] instanceof Set)){
+      loadHolidayCacheYear(year);
+    }
+    return nationalHolidayByYear[year] instanceof Set ? nationalHolidayByYear[year] : new Set();
+  }
+  function isNationalHolidayDate(dateObj){
+    const d = new Date(dateObj);
+    const y = d.getFullYear();
+    return getHolidaySetYear(y).has(dateKeyLocal(d));
+  }
+  async function loadNationalHolidayYear(year){
+    const y = Number(year);
+    if(!Number.isFinite(y)) return;
+    const hasCache = getHolidaySetYear(y).size > 0;
+    if(hasCache && isHolidayCacheFreshYear(y)) return;
+    try{
+      const res = await fetchWithTimeout('https://libur.deno.dev/api?year='+encodeURIComponent(String(y)), {}, 10000);
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const rows = await res.json();
+      const list = Array.isArray(rows)
+        ? rows
+            .filter(r => r && typeof r.date === 'string')
+            .map(r => r.date)
+        : [];
+      const uniq = Array.from(new Set(list));
+      nationalHolidayByYear[y] = new Set(uniq);
+      try{
+        localStorage.setItem(HOLIDAY_CACHE_KEY_PREFIX + String(y), JSON.stringify(uniq));
+        localStorage.setItem(HOLIDAY_CACHE_META_KEY_PREFIX + String(y), JSON.stringify({ fetchedAt: Date.now() }));
+      }catch(_){}
+    }catch(_){
+      loadHolidayCacheYear(y);
+    }
+  }
   function pickRandomPulangSyahduMessage(){
     if(!pulangSyahduMessages.length) return 'Selamat pulang, hati-hati di jalan dan jangan lupa berdoa.';
     let idx = Math.floor(Math.random() * pulangSyahduMessages.length);
@@ -944,8 +1013,15 @@ if (isset($_GET['text'])) {
 
   function getNextWorkdayName(baseDate = new Date()){
     const dayNames = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
-    let next = (new Date(baseDate).getDay() + 1) % 7;
-    if (next === 0) next = 1; // Minggu libur -> lompat ke Senin
+    const d = new Date(baseDate);
+    for(let i=1;i<=14;i++){
+      const cand = new Date(d.getFullYear(), d.getMonth(), d.getDate()+i);
+      if(cand.getDay() === 0) continue; // Minggu
+      if(isNationalHolidayDate(cand)) continue; // libur nasional
+      return dayNames[cand.getDay()];
+    }
+    let next = (d.getDay() + 1) % 7;
+    if (next === 0) next = 1;
     return dayNames[next];
   }
 
@@ -1951,6 +2027,9 @@ if (isset($_GET['text'])) {
 
       renderSholatListPlaceholder();
       await loadSholatBanyuwangi({announceOnError: !auto});
+      const now = new Date();
+      loadNationalHolidayYear(now.getFullYear());
+      loadNationalHolidayYear(now.getFullYear()+1);
 
       scheduleRunner();
       scheduleSafeReload(1);
