@@ -575,6 +575,7 @@ if (isset($_GET['text'])) {
   let schedulerHeartbeatSource = 'init';
   let fireRunBusy = false;
   let lastFireRunMinuteKey = null;
+  const PLAYBACK_TIMEOUT_MS = 60000;
 
   // Sholat state
   let sholatTimings=null; // semua waktu sholat & ekstra
@@ -715,8 +716,33 @@ if (isset($_GET['text'])) {
     setTestButtonState(running);
   }
 
+  function withPlaybackTimeout(promiseFactory, timeoutMs = PLAYBACK_TIMEOUT_MS, timeoutLabel = 'Playback timeout'){
+    return new Promise((resolve, reject)=>{
+      let settled = false;
+      const tid = setTimeout(()=>{
+        if(settled) return;
+        settled = true;
+        reject(new Error(timeoutLabel));
+      }, timeoutMs);
+      Promise.resolve()
+        .then(()=>promiseFactory())
+        .then((v)=>{
+          if(settled) return;
+          settled = true;
+          clearTimeout(tid);
+          resolve(v);
+        })
+        .catch((e)=>{
+          if(settled) return;
+          settled = true;
+          clearTimeout(tid);
+          reject(e);
+        });
+    });
+  }
+
   function playText(text, opts={}){
-    return new Promise(async (resolve,reject)=>{
+    return withPlaybackTimeout(()=>new Promise(async (resolve,reject)=>{
       const { trackAsTest=false, onStart=null, onFinish=null, withBell=true } = opts;
       const ctx = { audio:null, stopped:false, done:false, finish:null };
 
@@ -783,11 +809,11 @@ if (isset($_GET['text'])) {
       if(p&&p.catch){
         p.catch(err=>{ ctx.finish('error', err); });
       }
-    });
+    }), PLAYBACK_TIMEOUT_MS, 'TTS playback timeout');
   }
 
   function playKaget(opts={}){
-    return new Promise((resolve,reject)=>{
+    return withPlaybackTimeout(()=>new Promise((resolve,reject)=>{
       const { trackAsTest=false, onStart=null, onFinish=null } = opts;
       const ctx = { audio:null, stopped:false, done:false, finish:null };
 
@@ -834,7 +860,7 @@ if (isset($_GET['text'])) {
       if(p&&p.catch){
         p.catch(err=>{ ctx.finish('error', err); });
       }
-    });
+    }), PLAYBACK_TIMEOUT_MS, 'Kaget playback timeout');
   }
 
   async function fetchWithTimeout(url, opts={}, timeoutMs=10000){
@@ -1679,6 +1705,7 @@ if (isset($_GET['text'])) {
       } catch(_) {}
 
       if(intervalId){ clearTimeout(intervalId); intervalId=null; }
+      fireRunBusy = false;
       setNextRunFromCalculator();
       startCountdown();
       scheduleRunner();
