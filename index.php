@@ -355,6 +355,9 @@ if (isset($_GET['text'])) {
       <button id="btnTestPulang5" class="rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm hover:bg-slate-100">
         Test Pulang+5
       </button>
+      <button id="btnTestPantunPulang" class="rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm hover:bg-slate-100">
+        Test Pantun
+      </button>
       <span class="text-sm text-slate-600 ml-1">
         • <span id="liveClock" class="font-medium text-slate-800">--:--:--</span>
       </span>
@@ -477,6 +480,13 @@ if (isset($_GET['text'])) {
     'Selamat pulang, pelan-pelan di jalan dan jangan lupa berdoa dulu ya.',
     'Selamat pulang kerja, hati-hati di jalan, jangan lupa berdoa agar selamat sampai rumah.'
   ];
+  const pantunPulangMessages = [
+    'Beli jajanan di pasar baru, jangan lupa membeli sukun. Sebelum matikan komputer dan rapikan baju, pastikan sudah absen pulang di Smart Kampung.',
+    'Burung dara burung merpati, terbang tinggi ke arah gunung. Tas sudah digendong, kendaraan sudah siap diaktifkan, jangan sampai lupa klik absen pulang di Smart Kampung.',
+    'Jalan-jalan ke Blambangan, membeli sate sama Bu Ani. Lelah bekerja seharian penuh jangan jadi sia-sia, absen pulang Smart Kampung jangan dilewati.',
+    'Matahari terbenam hari pun sore, burung-burung kembali ke sarang. Biar di jalan pulang hati tenang dan hore, sudahkah Anda absen pulang di Smart Kampung, sayang?',
+    'Ke toko besi membeli paku, paku ditata di dalam karung. Sebelum melangkah keluar pintu, yuk sempatkan absen pulang di Smart Kampung.'
+  ];
 
   // Build Presensi list UI
   const presensiListEl = document.getElementById('presensiList');
@@ -513,7 +523,8 @@ if (isset($_GET['text'])) {
         btnStop=document.getElementById('btnStop'),
         btnTest=document.getElementById('btnTest'),
         btnTestHalfHour=document.getElementById('btnTestHalfHour'),
-        btnTestPulang5=document.getElementById('btnTestPulang5');
+        btnTestPulang5=document.getElementById('btnTestPulang5'),
+        btnTestPantunPulang=document.getElementById('btnTestPantunPulang');
   const optTest1Min=document.getElementById('optTest1Min'),
         optHourly=document.getElementById('optHourly'),
         optHalfHourly=document.getElementById('optHalfHourly'),
@@ -569,7 +580,7 @@ if (isset($_GET['text'])) {
   const activePlaybacks = new Set();
   let playedAlerts={},nextRunLabel=null;
   let playedPulangPlus5={},lastPulangSyahduIndex=-1;
-  let pendingPulangPlus5 = new Set();
+  let pendingPulangPlus5 = new Set(), lastPantunPulangIndex = -1;
   let countdownStuckReported = false; // untuk log countdown stuck
   let schedulerHeartbeatTs = Date.now();
   let schedulerHeartbeatSource = 'init';
@@ -1054,6 +1065,15 @@ if (isset($_GET['text'])) {
     const nextDay = getNextWorkdayName(baseDate);
     return `${core} Sampai jumpa kembali di hari ${nextDay}.`;
   }
+  function pickRandomPantunPulangMessage(){
+    if(!pantunPulangMessages.length) return 'Jangan lupa absen pulang di Smart Kampung.';
+    let idx = Math.floor(Math.random() * pantunPulangMessages.length);
+    if(pantunPulangMessages.length > 1 && idx === lastPantunPulangIndex){
+      idx = (idx + 1) % pantunPulangMessages.length;
+    }
+    lastPantunPulangIndex = idx;
+    return pantunPulangMessages[idx];
+  }
 
   // helper untuk hitung ts HH:MM pada tanggal dari baseTs
   function tsFromHHMMOnDate(baseTs, hhmm){
@@ -1087,7 +1107,7 @@ if (isset($_GET['text'])) {
     const candidates = presensiPulangAlerts
       .filter(a => a.days.includes(day))
       .map(a => {
-        const due = hhmmPlusMinutes(a.time, 5);
+        const due = hhmmPlusMinutes(a.time, 20);
         const ts = tsTodayFromHHMM(due);
         return { ts, alert: a, id: a.id + '_plus5' };
       })
@@ -1168,7 +1188,7 @@ if (isset($_GET['text'])) {
         });
         presensiPulangAlerts.forEach(a=>{
           if(!a.days.includes(day)) return;
-          addEvent(tsFromHHMMOnDate(dayDate.getTime(), hhmmPlusMinutes(a.time, 5)), 'Pesan syahdu pulang +5 menit');
+          addEvent(tsFromHHMMOnDate(dayDate.getTime(), hhmmPlusMinutes(a.time, 20)), 'Pantun pulang +20 menit');
         });
       }
     }
@@ -1424,7 +1444,7 @@ if (isset($_GET['text'])) {
       const p=nextPresensiTS();
       if(p) candidates.push({ts:p.ts,label:p.alert.label});
       const p5=nextPulangPlus5TS();
-      if(p5) candidates.push({ts:p5.ts,label:'Pesan syahdu pulang +5 menit'});
+      if(p5) candidates.push({ts:p5.ts,label:'Pantun pulang +20 menit'});
     }
     const s=nextSholatTS();
     if(s) candidates.push(s);
@@ -1666,12 +1686,12 @@ if (isset($_GET['text'])) {
       }
     }
 
-    // 3) Pulang +5 menit (tetap jalan walau berbarengan event lain)
+    // 3) Pulang +20 menit (tetap jalan walau berbarengan event lain)
     if (optPresensi && optPresensi.checked) {
       const day = now.getDay();
       for (const a of presensiPulangAlerts) {
         if(!a.days.includes(day)) continue;
-        if(hhmm !== hhmmPlusMinutes(a.time, 5)) continue;
+        if(hhmm !== hhmmPlusMinutes(a.time, 20)) continue;
         const key = a.id + '_plus5';
         if(playedPulangPlus5[key] === tkey) continue;
         if(pendingPulangPlus5.has(key)) continue;
@@ -1679,11 +1699,11 @@ if (isset($_GET['text'])) {
         hasOtherAlertThisMinute = true;
         playQueue.push(async ()=>{
           try{
-            await playText(buildPulangPlus5Message(now), { withBell: false });
+            await playText(pickRandomPantunPulangMessage(), { withBell: false });
             playedPulangPlus5[key] = tkey;
             fetchLogsAfterDelay();
           }catch(e){
-            console.error('Pulang+5 fireRun error', e);
+            console.error('Pantun pulang +20 fireRun error', e);
           }finally{
             pendingPulangPlus5.delete(key);
           }
@@ -1841,7 +1861,7 @@ if (isset($_GET['text'])) {
 
     for(const a of presensiPulangAlerts){
       if(!a.days.includes(day)) continue;
-      const due = hhmmPlusMinutes(a.time, 5);
+      const due = hhmmPlusMinutes(a.time, 20);
       const key = a.id + '_plus5';
       if(due !== cur) continue;
       if(playedPulangPlus5[key]===tkey) continue;
@@ -1849,12 +1869,12 @@ if (isset($_GET['text'])) {
       pendingPulangPlus5.add(key);
       playedPulangPlus5[key]=tkey;
       try{
-        await playText(buildPulangPlus5Message(now), { withBell: false });
+        await playText(pickRandomPantunPulangMessage(), { withBell: false });
         fetchLogsAfterDelay();
         setNextRunFromCalculator();
       }catch(e){
         delete playedPulangPlus5[key];
-        console.error('Pulang+5 play error',e);
+        console.error('Pantun pulang +20 play error',e);
       } finally { pendingPulangPlus5.delete(key); }
     }
   }
@@ -1970,8 +1990,8 @@ if (isset($_GET['text'])) {
       });
       presensiPulangAlerts.forEach(a=>{
         if(!a.days.includes(baseDay)) return;
-        const ts = tsFromHHMMOnDate(baseTs, hhmmPlusMinutes(a.time, 5));
-        pick(ts, 'Pesan syahdu pulang +5 menit');
+        const ts = tsFromHHMMOnDate(baseTs, hhmmPlusMinutes(a.time, 20));
+        pick(ts, 'Pantun pulang +20 menit');
       });
     }
 
@@ -2223,6 +2243,25 @@ if (isset($_GET['text'])) {
       }
     });
   }
+  if(btnTestPantunPulang){
+    btnTestPantunPulang.addEventListener('click', async ()=>{
+      if(btnTestPantunPulang.dataset.running === '1'){
+        stopCurrentPlayback();
+        return;
+      }
+      try{
+        const status = await playText(pickRandomPantunPulangMessage(), {
+          trackAsTest: true,
+          withBell: false,
+          onStart: ()=>{ btnTestPantunPulang.dataset.running='1'; setInlineTestButtonState(btnTestPantunPulang, true); },
+          onFinish: ()=>{ btnTestPantunPulang.dataset.running='0'; setInlineTestButtonState(btnTestPantunPulang, false); }
+        });
+        if(status === 'ok') fetchLogsAfterDelay();
+      }catch(e){
+        alert('Gagal test pantun pulang: '+e);
+      }
+    });
+  }
 
   function updateModeInfo(){
     const modes=[];
@@ -2230,7 +2269,7 @@ if (isset($_GET['text'])) {
     if(optHourly && optHourly.checked) modes.push('hourly');
     if(optHalfHourly && optHalfHourly.checked) modes.push('half-hour-kaget');
     if(optPresensi && optPresensi.checked) modes.push('presensi-alerts');
-    if(optPresensi && optPresensi.checked) modes.push('pulang+5-syahdu');
+    if(optPresensi && optPresensi.checked) modes.push('pulang+20-pantun');
     if(optSholat && optSholat.checked) modes.push('sholat-alerts');
     if(optAutoReload && optAutoReload.checked) modes.push('auto-reload');
     modeInfo.textContent = modes.length ? modes.join(' + ') : 'None';
