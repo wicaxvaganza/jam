@@ -481,11 +481,11 @@ if (isset($_GET['text'])) {
     'Selamat pulang kerja, hati-hati di jalan, jangan lupa berdoa agar selamat sampai rumah.'
   ];
   const pantunPulangMessages = [
-    'Beli jajanan di pasar baru, jangan lupa membeli sukun. Sebelum matikan komputer dan rapikan baju, pastikan sudah absen pulang di Smart Kampung.',
-    'Burung dara burung merpati, terbang tinggi ke arah gunung. Tas sudah digendong, kendaraan sudah siap diaktifkan, jangan sampai lupa klik absen pulang di Smart Kampung.',
-    'Jalan-jalan ke Blambangan, membeli sate sama Bu Ani. Lelah bekerja seharian penuh jangan jadi sia-sia, absen pulang Smart Kampung jangan dilewati.',
-    'Matahari terbenam hari pun sore, burung-burung kembali ke sarang. Biar di jalan pulang hati tenang dan hore, sudahkah Anda absen pulang di Smart Kampung, sayang?',
-    'Ke toko besi membeli paku, paku ditata di dalam karung. Sebelum melangkah keluar pintu, yuk sempatkan absen pulang di Smart Kampung.'
+    'Pagi-pagi belanja sukun, singgah sebentar membeli jamu. Sebelum beranjak menutup hari, jangan lupa absen pulang dulu.',
+    'Terbang rendah burung merpati, hinggap sebentar di pagar kampung. Tas sudah siap mari berhenti, klik absen pulang di Smart Kampung.',
+    'Jalan-jalan ke kota Wangi, pulangnya mampir membeli karung. Kerja seharian jangan rugi, absen pulang dulu di Smart Kampung.',
+    'Senja tiba langit kemerahan, angin berembus sejuk tak murung. Supaya jalan terasa nyaman, jangan lupa absen di Smart Kampung.',
+    'Membeli paku di toko ujung, disimpan rapi di dalam karung. Sebelum melangkah keluar gedung, sempatkan absen di Smart Kampung.'
   ];
 
   // Build Presensi list UI
