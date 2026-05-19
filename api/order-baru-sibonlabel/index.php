@@ -38,10 +38,42 @@ function speak_on_windows_server($text, $lang = 'id', $speed = '1') {
 
     $durationSec = max(4, min(20, (int)ceil(mb_strlen($text) / 11)));
     $escapedPath = str_replace("'", "''", $tmpFile);
-    $psScript = "\$p=New-Object -ComObject WMPlayer.OCX; \$m=\$p.newMedia('{$escapedPath}'); \$p.currentPlaylist.appendItem(\$m); \$p.settings.volume=100; \$p.controls.play(); Start-Sleep -Seconds {$durationSec}; \$p.controls.stop(); Remove-Item -LiteralPath '{$escapedPath}' -ErrorAction SilentlyContinue;";
-    $cmd = 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command ' . escapeshellarg($psScript);
+    $psScript = <<<PS1
+try {
+  \$ErrorActionPreference = 'Stop'
+  \$p = New-Object -ComObject WMPlayer.OCX
+  \$m = \$p.newMedia('{$escapedPath}')
+  \$p.currentPlaylist.appendItem(\$m) | Out-Null
+  \$p.settings.volume = 100
+  \$p.controls.play()
+  Start-Sleep -Seconds {$durationSec}
+  \$p.controls.stop()
+  Remove-Item -LiteralPath '{$escapedPath}' -ErrorAction SilentlyContinue
+  exit 0
+} catch {
+  Write-Output \$_.Exception.Message
+  Remove-Item -LiteralPath '{$escapedPath}' -ErrorAction SilentlyContinue
+  exit 1
+}
+PS1;
 
-    @pclose(@popen('start /B "" ' . $cmd, 'r'));
+    $psFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'jam_play_' . md5($tmpFile) . '.ps1';
+    if (@file_put_contents($psFile, $psScript) === false) {
+        @unlink($tmpFile);
+        return [false, 'Gagal membuat script playback sementara'];
+    }
+
+    $cmd = 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ' . escapeshellarg($psFile) . ' 2>&1';
+    $output = [];
+    $exitCode = 1;
+    @exec($cmd, $output, $exitCode);
+    @unlink($psFile);
+
+    if ($exitCode !== 0) {
+        $err = trim(implode(' | ', $output));
+        if ($err === '') $err = 'Playback process gagal (kemungkinan session service non-interaktif)';
+        return [false, $err];
+    }
     return [true, null];
 }
 
