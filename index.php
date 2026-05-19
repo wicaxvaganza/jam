@@ -438,7 +438,12 @@ if (isset($_GET['text'])) {
           <div id="monitorEventList" class="mt-3 flex max-h-80 flex-col gap-2 overflow-y-auto pr-1"></div>
         </div>
         <div class="mt-3 max-w-md rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h3 class="text-base font-semibold text-slate-800">Riwayat Notifikasi Sibonlabel</h3>
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="text-base font-semibold text-slate-800">Riwayat Notifikasi Sibonlabel</h3>
+            <button id="btnResetSibon" class="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs text-rose-700 hover:bg-rose-100">
+              Reset ID Sibonlabel
+            </button>
+          </div>
           <div id="monitorOrderReads" class="mt-2 flex max-h-56 flex-col gap-2 overflow-y-auto pr-1"></div>
         </div>
       </div>
@@ -557,6 +562,7 @@ if (isset($_GET['text'])) {
   const monitorNextDateEl=document.getElementById('monitorNextDate');
   const monitorEventListEl=document.getElementById('monitorEventList');
   const monitorOrderReadsEl=document.getElementById('monitorOrderReads');
+  const btnResetSibon=document.getElementById('btnResetSibon');
 
   function setActiveTab(which){
     const tabs = [
@@ -709,6 +715,16 @@ if (isset($_GET['text'])) {
     if(!pendingOrderAnnouncements[t]) pendingOrderAnnouncements[t] = {};
     if(pending) pendingOrderAnnouncements[t][key] = 1;
     else delete pendingOrderAnnouncements[t][key];
+  }
+
+  function resetSibonOrderMarkers(){
+    spokenOrders = { new_order: {}, completed_order: {} };
+    saveSpokenOrders(spokenOrders);
+    pendingOrderAnnouncements.new_order = {};
+    pendingOrderAnnouncements.completed_order = {};
+    orderAnnouncementQueue.length = 0;
+    orderNotifierPrimed = true; // skip prime supaya status saat ini dianggap kandidat notifikasi
+    logClient('SIBON reset markers triggered');
   }
 
   function waitForPlaybackIdle(maxWaitMs = 120000){
@@ -2579,6 +2595,17 @@ if (isset($_GET['text'])) {
     tabLogClient.addEventListener('click', ()=>{
       setActiveLogTab('client');
       fetchLogs();
+    });
+  }
+
+  if(btnResetSibon){
+    btnResetSibon.addEventListener('click', async ()=>{
+      resetSibonOrderMarkers();
+      pushOrderReadHistory('Reset marker notifikasi Sibonlabel. Status terbaru akan dicek ulang.');
+      renderOrderReadHistory();
+      try{
+        await checkOrderStatusLoop();
+      }catch(_){}
     });
   }
 
