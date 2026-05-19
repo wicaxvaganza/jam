@@ -2,133 +2,6 @@
 @ini_set('display_errors', '0');
 @error_reporting(0);
 
-// --- simple API route by URL path ---
-$requestUri = isset($_SERVER['REQUEST_URI']) ? (string)$_SERVER['REQUEST_URI'] : '/';
-$requestPath = parse_url($requestUri, PHP_URL_PATH);
-$requestPath = is_string($requestPath) ? rtrim($requestPath, '/') : '';
-$basePath = '/' . trim(basename(__DIR__), '/');
-$apiOrderBaruPath = $basePath . '/api/order-baru-sibonlabel';
-$apiOrderSelesaiPath = $basePath . '/api/order-selesai';
-$apiAccessKey = '123321';
-$ttsQueuePath = __DIR__ . '/tts_queue.ndjson';
-
-function get_request_api_key() {
-    $fromQuery = isset($_GET['api_key']) ? (string)$_GET['api_key'] : '';
-    if ($fromQuery !== '') return $fromQuery;
-
-    if (isset($_SERVER['HTTP_X_API_KEY']) && (string)$_SERVER['HTTP_X_API_KEY'] !== '') {
-        return (string)$_SERVER['HTTP_X_API_KEY'];
-    }
-    return '';
-}
-
-function deny_invalid_api_key() {
-    http_response_code(401);
-    header('Content-Type: application/json; charset=utf-8');
-    echo json_encode([
-        'ok' => false,
-        'error' => 'Unauthorized: API key invalid'
-    ], JSON_UNESCAPED_UNICODE);
-    exit;
-}
-
-function pop_tts_queue_job($queuePath) {
-    $fh = @fopen($queuePath, 'c+');
-    if (!$fh) return [null, 'Gagal membuka file queue'];
-    if (!flock($fh, LOCK_EX)) {
-        fclose($fh);
-        return [null, 'Gagal lock file queue'];
-    }
-
-    rewind($fh);
-    $content = stream_get_contents($fh);
-    $lines = preg_split("/\r\n|\n|\r/", (string)$content);
-    $lines = array_values(array_filter($lines, function($line){
-        return trim((string)$line) !== '';
-    }));
-
-    $job = null;
-    if (!empty($lines)) {
-        $raw = array_shift($lines);
-        $decoded = @json_decode($raw, true);
-        if (is_array($decoded)) {
-            $job = $decoded;
-        }
-    }
-
-    ftruncate($fh, 0);
-    rewind($fh);
-    if (!empty($lines)) {
-        fwrite($fh, implode(PHP_EOL, $lines) . PHP_EOL);
-    }
-    fflush($fh);
-    flock($fh, LOCK_UN);
-    fclose($fh);
-    return [$job, null];
-}
-
-if (isset($_GET['queuepop'])) {
-    if (get_request_api_key() !== $apiAccessKey) {
-        deny_invalid_api_key();
-    }
-    header('Content-Type: application/json; charset=utf-8');
-    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-    header('Pragma: no-cache');
-    header('Expires: 0');
-    list($job, $err) = pop_tts_queue_job($ttsQueuePath);
-    if ($err !== null) {
-        http_response_code(500);
-        echo json_encode([
-            'ok' => false,
-            'error' => $err
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-    if (!is_array($job)) {
-        echo json_encode([
-            'ok' => true,
-            'has_job' => false
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-    echo json_encode([
-        'ok' => true,
-        'has_job' => true,
-        'job' => [
-            'id' => $job['id'] ?? null,
-            'text' => $job['text'] ?? '',
-            'lang' => $job['lang'] ?? 'id',
-            'speed' => $job['speed'] ?? '1',
-            'source' => $job['source'] ?? ''
-        ]
-    ], JSON_UNESCAPED_UNICODE);
-    exit;
-}
-
-if ($requestPath === $apiOrderBaruPath || $requestPath === '/api/order-baru-sibonlabel') {
-    if (get_request_api_key() !== $apiAccessKey) {
-        deny_invalid_api_key();
-    }
-    header('Content-Type: application/json; charset=utf-8');
-    echo json_encode([
-        'ok' => true,
-        'message' => 'Ada order baru sibonlabel, cek ya gaes!'
-    ], JSON_UNESCAPED_UNICODE);
-    exit;
-}
-
-if ($requestPath === $apiOrderSelesaiPath || $requestPath === '/api/order-selesai') {
-    if (get_request_api_key() !== $apiAccessKey) {
-        deny_invalid_api_key();
-    }
-    header('Content-Type: application/json; charset=utf-8');
-    echo json_encode([
-        'ok' => true,
-        'message' => 'Order telah diselesaikan, terimakasih!'
-    ], JSON_UNESCAPED_UNICODE);
-    exit;
-}
-
 // --- config ---
 $LOG_PATH = __DIR__ . '/tts_activity.log';
 $CLIENT_LOG_PATH = __DIR__ . '/client_error.log'; // log terpisah untuk error client
@@ -713,10 +586,7 @@ if (isset($_GET['text'])) {
   let schedulerHeartbeatSource = 'init';
   let fireRunBusy = false;
   let lastFireRunMinuteKey = null;
-  let externalQueueIntervalId = null;
-  let externalQueueBusy = false;
   const PLAYBACK_TIMEOUT_MS = 60000;
-  const EXTERNAL_TTS_API_KEY = <?php echo json_encode($apiAccessKey, JSON_UNESCAPED_UNICODE); ?>;
   const HOLIDAY_CACHE_KEY_PREFIX = 'libur_nasional_v1_';
   const HOLIDAY_CACHE_META_KEY_PREFIX = 'libur_nasional_meta_v1_';
   const HOLIDAY_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -733,30 +603,6 @@ if (isset($_GET['text'])) {
 
   // ====== Simpan & load posisi checklist ke localStorage ======
   const CHECKBOX_STATE_KEY = 'botngomong_checkbox_state_v1';
-
-  function queuePopUrl(){
-    return window.location.pathname + '?queuepop=1&api_key=' + encodeURIComponent(EXTERNAL_TTS_API_KEY);
-  }
-
-  async function pollExternalTtsQueue(){
-    if(!started || externalQueueBusy) return;
-    if(activePlaybacks.size > 0) return;
-    externalQueueBusy = true;
-    try{
-      const res = await fetch(queuePopUrl(), { cache:'no-store' });
-      if(!res.ok) return;
-      const data = await res.json();
-      if(!data || !data.ok || !data.has_job || !data.job) return;
-      const text = String(data.job.text || '').trim();
-      if(!text) return;
-      const status = await playText(text, { withBell:false });
-      if(status === 'ok') fetchLogsAfterDelay();
-    }catch(e){
-      try{ logClient('queue poll error: ' + ((e && e.message) ? e.message : String(e))); }catch(_){}
-    }finally{
-      externalQueueBusy = false;
-    }
-  }
 
   function saveCheckboxState(){
     try{
@@ -2241,9 +2087,6 @@ if (isset($_GET['text'])) {
       if(sholatCheckIntervalId) clearInterval(sholatCheckIntervalId);
       sholatCheckIntervalId=setInterval(()=>checkSholatAlertsLoop(), 5000);
 
-      if(externalQueueIntervalId) clearInterval(externalQueueIntervalId);
-      externalQueueIntervalId = setInterval(()=>{ pollExternalTtsQueue(); }, 2000);
-
       if(window._sholatRefreshId) clearInterval(window._sholatRefreshId);
       window._sholatRefreshId = setInterval(async ()=>{
         const before = JSON.stringify(sholatTimings||{});
@@ -2262,7 +2105,6 @@ if (isset($_GET['text'])) {
       btnStop.classList.remove('hidden');
       statusBadge.textContent='Running';
       updateModeInfo();
-      pollExternalTtsQueue();
     }catch(err){
       started=false;
       try {
@@ -2297,7 +2139,6 @@ if (isset($_GET['text'])) {
     if(logRefreshIntervalId){ clearInterval(logRefreshIntervalId); logRefreshIntervalId=null; }
     if(presensiCheckIntervalId){ clearInterval(presensiCheckIntervalId); presensiCheckIntervalId=null; }
     if(sholatCheckIntervalId){ clearInterval(sholatCheckIntervalId); sholatCheckIntervalId=null; }
-    if(externalQueueIntervalId){ clearInterval(externalQueueIntervalId); externalQueueIntervalId=null; }
     if(window._sholatRefreshId){ clearInterval(window._sholatRefreshId); window._sholatRefreshId=null; }
     if(midnightResetTimeoutId){ clearTimeout(midnightResetTimeoutId); midnightResetTimeoutId=null; }
     if(sholatRefreshTimeoutId){ clearTimeout(sholatRefreshTimeoutId); sholatRefreshTimeoutId=null; }
@@ -2482,7 +2323,6 @@ if (isset($_GET['text'])) {
 </script>
 </body>
 </html>
-
 
 
 
