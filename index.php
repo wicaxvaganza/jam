@@ -437,15 +437,6 @@ if (isset($_GET['text'])) {
           </div>
           <div id="monitorEventList" class="mt-3 flex max-h-80 flex-col gap-2 overflow-y-auto pr-1"></div>
         </div>
-        <div class="mt-3 max-w-md rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div class="flex items-center justify-between gap-2">
-            <h3 class="text-base font-semibold text-slate-800">Riwayat Notifikasi Sibonlabel</h3>
-            <button id="btnResetSibon" class="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs text-rose-700 hover:bg-rose-100">
-              Reset ID Sibonlabel
-            </button>
-          </div>
-          <div id="monitorOrderReads" class="mt-2 flex max-h-56 flex-col gap-2 overflow-y-auto pr-1"></div>
-        </div>
       </div>
     </div>
 
@@ -561,8 +552,6 @@ if (isset($_GET['text'])) {
   const monitorNextCountdownEl=document.getElementById('monitorNextCountdown');
   const monitorNextDateEl=document.getElementById('monitorNextDate');
   const monitorEventListEl=document.getElementById('monitorEventList');
-  const monitorOrderReadsEl=document.getElementById('monitorOrderReads');
-  const btnResetSibon=document.getElementById('btnResetSibon');
 
   function setActiveTab(which){
     const tabs = [
@@ -586,7 +575,7 @@ if (isset($_GET['text'])) {
   tabMonitoring.addEventListener('click', ()=> setActiveTab('monitoring'));
 
   // ====== State ======
-  let started=false,intervalId=null,nextRunTimestamp=null,countdownInterval=null,lastPlayedHour=null,lastPlayedHalfHourKey=null,lastKagetDeferKey=null,hourlyIntervalId=null,logRefreshIntervalId=null,presensiCheckIntervalId=null,sholatCheckIntervalId=null,orderCheckIntervalId=null,midnightResetTimeoutId=null,sholatRefreshTimeoutId=null,watchdogIntervalId=null,monitoringIntervalId=null;
+  let started=false,intervalId=null,nextRunTimestamp=null,countdownInterval=null,lastPlayedHour=null,lastPlayedHalfHourKey=null,lastKagetDeferKey=null,hourlyIntervalId=null,logRefreshIntervalId=null,presensiCheckIntervalId=null,sholatCheckIntervalId=null,midnightResetTimeoutId=null,sholatRefreshTimeoutId=null,watchdogIntervalId=null,monitoringIntervalId=null;
   let activeTestPlayback=null,isTestRunning=false;
   const activePlaybacks = new Set();
   let playedAlerts={},nextRunLabel=null;
@@ -597,17 +586,7 @@ if (isset($_GET['text'])) {
   let schedulerHeartbeatSource = 'init';
   let fireRunBusy = false;
   let lastFireRunMinuteKey = null;
-  let orderNotifierPrimed = false;
-  let orderAnnouncementBusy = false;
-  const orderAnnouncementQueue = [];
-  const pendingOrderAnnouncements = { new_order: {}, completed_order: {} };
-  const orderReadHistory = [];
-  const ORDER_READ_HISTORY_LIMIT = 20;
   const PLAYBACK_TIMEOUT_MS = 60000;
-  const ORDER_STATUS_URL = 'https://sibonlabel.rsudblambangan.id/status';
-  const ORDER_STATUS_INTERVAL_MS = 5000;
-  const ORDER_SPOKEN_KEY = 'botngomong_spoken_orders_v1';
-  const ORDER_MAX_SPOKEN_IDS = 500;
   const HOLIDAY_CACHE_KEY_PREFIX = 'libur_nasional_v1_';
   const HOLIDAY_CACHE_META_KEY_PREFIX = 'libur_nasional_meta_v1_';
   const HOLIDAY_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -653,277 +632,9 @@ if (isset($_GET['text'])) {
     }catch(_){}
   }
 
-  function loadSpokenOrders(){
-    try{
-      const raw = localStorage.getItem(ORDER_SPOKEN_KEY);
-      if(!raw) return { new_order: {}, completed_order: {} };
-      const parsed = JSON.parse(raw);
-      return {
-        new_order: (parsed && parsed.new_order && typeof parsed.new_order === 'object') ? parsed.new_order : {},
-        completed_order: (parsed && parsed.completed_order && typeof parsed.completed_order === 'object') ? parsed.completed_order : {}
-      };
-    }catch(_){
-      return { new_order: {}, completed_order: {} };
-    }
-  }
-
-  function saveSpokenOrders(state){
-    try{
-      localStorage.setItem(ORDER_SPOKEN_KEY, JSON.stringify(state));
-    }catch(_){}
-  }
-
-  function trimSpokenOrderMap(map){
-    const keys = Object.keys(map || {});
-    if(keys.length <= ORDER_MAX_SPOKEN_IDS) return map;
-    const sorted = keys.sort((a,b)=> (map[b] || 0) - (map[a] || 0));
-    const next = {};
-    sorted.slice(0, ORDER_MAX_SPOKEN_IDS).forEach(k=>{ next[k] = map[k]; });
-    return next;
-  }
-
-  let spokenOrders = loadSpokenOrders();
-
-  function hasSpokenOrder(type, id){
-    const t = type === 'completed_order' ? 'completed_order' : 'new_order';
-    const key = String(id || '').trim();
-    if(!key) return false;
-    return !!(spokenOrders[t] && spokenOrders[t][key]);
-  }
-
-  function markOrderSpoken(type, id){
-    const t = type === 'completed_order' ? 'completed_order' : 'new_order';
-    const key = String(id || '').trim();
-    if(!key) return;
-    if(!spokenOrders[t]) spokenOrders[t] = {};
-    spokenOrders[t][key] = Date.now();
-    spokenOrders[t] = trimSpokenOrderMap(spokenOrders[t]);
-    saveSpokenOrders(spokenOrders);
-  }
-
-  function isOrderAnnouncementPending(type, id){
-    const t = type === 'completed_order' ? 'completed_order' : 'new_order';
-    const key = String(id || '').trim();
-    if(!key) return false;
-    return !!(pendingOrderAnnouncements[t] && pendingOrderAnnouncements[t][key]);
-  }
-
-  function setOrderAnnouncementPending(type, id, pending){
-    const t = type === 'completed_order' ? 'completed_order' : 'new_order';
-    const key = String(id || '').trim();
-    if(!key) return;
-    if(!pendingOrderAnnouncements[t]) pendingOrderAnnouncements[t] = {};
-    if(pending) pendingOrderAnnouncements[t][key] = 1;
-    else delete pendingOrderAnnouncements[t][key];
-  }
-
-  function resetSibonOrderMarkers(){
-    spokenOrders = { new_order: {}, completed_order: {} };
-    saveSpokenOrders(spokenOrders);
-    pendingOrderAnnouncements.new_order = {};
-    pendingOrderAnnouncements.completed_order = {};
-    orderAnnouncementQueue.length = 0;
-    orderNotifierPrimed = true; // skip prime supaya status saat ini dianggap kandidat notifikasi
-    logClient('SIBON reset markers triggered');
-  }
-
-  function waitForPlaybackIdle(maxWaitMs = 120000){
-    const startedAt = Date.now();
-    return new Promise(resolve=>{
-      const tick = ()=>{
-        const idle = !fireRunBusy && activePlaybacks.size === 0;
-        if(idle) return resolve(true);
-        if((Date.now() - startedAt) >= maxWaitMs) return resolve(false);
-        setTimeout(tick, 300);
-      };
-      tick();
-    });
-  }
-
-  function pushOrderReadHistory(text){
-    const safe = (text || '').toString().trim();
-    if(!safe) return;
-    orderReadHistory.unshift({ ts: Date.now(), text: safe });
-    if(orderReadHistory.length > ORDER_READ_HISTORY_LIMIT){
-      orderReadHistory.length = ORDER_READ_HISTORY_LIMIT;
-    }
-  }
-
-  function renderOrderReadHistory(){
-    if(!monitorOrderReadsEl) return;
-    monitorOrderReadsEl.innerHTML = '';
-    if(!orderReadHistory.length){
-      const empty = document.createElement('div');
-      empty.className = 'rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500';
-      empty.textContent = 'Belum ada notifikasi sibonlabel yang dibacakan.';
-      monitorOrderReadsEl.appendChild(empty);
-      return;
-    }
-    orderReadHistory.forEach((it)=>{
-      const row = document.createElement('div');
-      row.className = 'rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700';
-      row.textContent = `${fmtHHMM(it.ts)} - ${it.text}`;
-      monitorOrderReadsEl.appendChild(row);
-    });
-  }
-
-  async function processOrderAnnouncementQueue(){
-    if(orderAnnouncementBusy) return;
-    orderAnnouncementBusy = true;
-    try{
-      while(orderAnnouncementQueue.length){
-        const item = orderAnnouncementQueue[0];
-        const idle = await waitForPlaybackIdle();
-        if(!idle) break;
-        try{
-          const status = await playText(item.text, { ttsSpeed: '0.92' });
-          if(status === 'ok'){
-            markOrderSpoken(item.type, item.id);
-            pushOrderReadHistory(item.text);
-            renderOrderReadHistory();
-            fetchLogsAfterDelay();
-          }
-        }catch(e){
-          logClient('order announce error: ' + errMessage(e));
-        } finally {
-          setOrderAnnouncementPending(item.type, item.id, false);
-          orderAnnouncementQueue.shift();
-        }
-      }
-    } finally {
-      orderAnnouncementBusy = false;
-    }
-  }
-
-  function enqueueOrderAnnouncement(type, id, text){
-    if(!id || !text) return;
-    orderAnnouncementQueue.push({ type, id, text });
-    processOrderAnnouncementQueue();
-  }
-
-  function composeOrderSpeech(type, name, room, fallbackMessage){
-    const cleanName = normalizeOrderSpeechText(name, { titleCaseWords: true });
-    const cleanRoom = normalizeRoomSpeechText(room);
-    const isCompleted = type === 'completed_order';
-    if(cleanName && cleanRoom){
-      return isCompleted
-        ? `Order dari ${cleanName}, ruang ${cleanRoom}, telah diselesaikan.`
-        : `Ada order baru, dari ${cleanName}, ruang ${cleanRoom}.`;
-    }
-    if(cleanName){
-      return isCompleted
-        ? `Order dari ${cleanName}, telah diselesaikan.`
-        : `Ada order baru, dari ${cleanName}.`;
-    }
-    if(cleanRoom){
-      return isCompleted
-        ? `Order ruang ${cleanRoom}, telah diselesaikan.`
-        : `Ada order baru, untuk ruang ${cleanRoom}.`;
-    }
-    const cleanFallback = normalizeOrderSpeechText(fallbackMessage, { titleCaseWords: false });
-    return cleanFallback || (isCompleted ? 'Ada order yang telah diselesaikan.' : 'Ada order baru masuk.');
-  }
-
-  function normalizeOrderSpeechText(value, opts={}){
-    const { titleCaseWords=false } = opts;
-    let t = (value || '').toString();
-    t = t.replace(/[_]+/g, ' ');
-    t = t.replace(/[|]+/g, ', ');
-    t = t.replace(/[&]/g, ' dan ');
-    t = t.replace(/[/]+/g, ' ');
-    t = t.replace(/[(){}\[\]<>]/g, ' ');
-    t = t.replace(/\s+/g, ' ').trim();
-    if(!t) return '';
-    if(titleCaseWords || /^[A-Z0-9\s.,-]+$/.test(t)){
-      const minorWords = new Set(['dan','di','ke','dari','untuk','atas','bawah','rawat','jalan']);
-      const words = t.toLowerCase().split(' ').map((w, idx)=>{
-        if(!w) return w;
-        if(minorWords.has(w) && idx > 0) return w;
-        return w.charAt(0).toUpperCase() + w.slice(1);
-      });
-      t = words.join(' ');
-    }
-    return t;
-  }
-
-  function normalizeRoomSpeechText(room){
-    let t = normalizeOrderSpeechText(room, { titleCaseWords: true });
-    if(!t) return '';
-    const map = {
-      'IGD': 'instalasi gawat darurat',
-      'ICU': 'I C U',
-      'NICU': 'N I C U',
-      'PICU': 'P I C U',
-      'HCU': 'H C U',
-      'ICCU': 'I C C U',
-      'OK': 'kamar operasi',
-      'VK': 'ruang V K',
-      'RJ': 'rawat jalan',
-      'RI': 'rawat inap',
-      'RWJ': 'rawat jalan',
-      'IRNA': 'rawat inap'
-    };
-    t = t.split(' ').map(token=>{
-      const key = token.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      if(map[key]) return map[key];
-      return token;
-    }).join(' ');
-    t = t.replace(/\s+/g, ' ').trim();
-    return t;
-  }
-
-  function extractOrderFields(section){
-    if(!section || typeof section !== 'object') return { id: '', name: '', room: '', message: '' };
-    const id = section.latest_id ?? section.id ?? section.order_id ?? '';
-    const name = section.order_name ?? section.nama_order ?? section.nama ?? section.patient_name ?? section.pasien ?? '';
-    const room = section.nama_ruang ?? section.ruang ?? section.room ?? section.room_name ?? section.lokasi ?? '';
-    const message = section.message ?? '';
-    return { id: String(id || '').trim(), name, room, message };
-  }
-
-  async function checkOrderStatusLoop(){
-    if(!started) return;
-    try{
-      const resp = await fetch(ORDER_STATUS_URL, { cache: 'no-store' });
-      if(!resp.ok) throw new Error('HTTP '+resp.status);
-      const data = await resp.json();
-      const newOrder = extractOrderFields(data && data.new_order);
-      const completedOrder = extractOrderFields(data && data.completed_order);
-
-      if(!orderNotifierPrimed){
-        if(newOrder.id) markOrderSpoken('new_order', newOrder.id);
-        if(completedOrder.id) markOrderSpoken('completed_order', completedOrder.id);
-        orderNotifierPrimed = true;
-        return;
-      }
-
-      if(newOrder.id && data?.new_order?.exists && !hasSpokenOrder('new_order', newOrder.id) && !isOrderAnnouncementPending('new_order', newOrder.id)){
-        setOrderAnnouncementPending('new_order', newOrder.id, true);
-        enqueueOrderAnnouncement(
-          'new_order',
-          newOrder.id,
-          composeOrderSpeech('new_order', newOrder.name, newOrder.room, newOrder.message)
-        );
-      }
-
-      if(completedOrder.id && data?.completed_order?.exists && !hasSpokenOrder('completed_order', completedOrder.id) && !isOrderAnnouncementPending('completed_order', completedOrder.id)){
-        setOrderAnnouncementPending('completed_order', completedOrder.id, true);
-        enqueueOrderAnnouncement(
-          'completed_order',
-          completedOrder.id,
-          composeOrderSpeech('completed_order', completedOrder.name, completedOrder.room, completedOrder.message)
-        );
-      }
-    }catch(e){
-      logClient('order status loop error: ' + errMessage(e));
-    }
-  }
 
   // ====== Helpers ======
-  function ttsUrlFor(text, options = {}){
-    const speed = (options && options.speed) ? String(options.speed) : '1';
-    return window.location.origin+window.location.pathname+'?text='+encodeURIComponent(text)+'&tl=id&ttsspeed='+encodeURIComponent(speed);
-  }
+  function ttsUrlFor(text){return window.location.origin+window.location.pathname+'?text='+encodeURIComponent(text)+'&tl=id';}
   function kagetUrl(){
     const basePath = window.location.pathname.replace(/\/[^\/]*$/, '/');
     return window.location.origin + basePath + 'kaget.mp3';
@@ -1064,7 +775,7 @@ if (isset($_GET['text'])) {
 
   function playText(text, opts={}){
     return withPlaybackTimeout(()=>new Promise(async (resolve,reject)=>{
-      const { trackAsTest=false, onStart=null, onFinish=null, withBell=true, ttsSpeed='1' } = opts;
+      const { trackAsTest=false, onStart=null, onFinish=null, withBell=true } = opts;
       const ctx = { audio:null, stopped:false, done:false, finish:null };
 
       ctx.finish = (status, err=null)=>{
@@ -1112,7 +823,7 @@ if (isset($_GET['text'])) {
         return;
       }
 
-      const audio=new Audio(ttsUrlFor(text, { speed: ttsSpeed }));
+      const audio=new Audio(ttsUrlFor(text));
       ctx.audio = audio;
       audio.preload='auto';
 
@@ -1505,7 +1216,6 @@ if (isset($_GET['text'])) {
 
   function renderMonitoringEvents(){
     if(!monitorEventListEl || !monitorNextCountdownEl || !monitorNextDateEl) return;
-    renderOrderReadHistory();
     const items = buildMonitoringEvents();
     monitorEventListEl.innerHTML = '';
 
@@ -2378,10 +2088,6 @@ if (isset($_GET['text'])) {
       if(sholatCheckIntervalId) clearInterval(sholatCheckIntervalId);
       sholatCheckIntervalId=setInterval(()=>checkSholatAlertsLoop(), 5000);
 
-      if(orderCheckIntervalId) clearInterval(orderCheckIntervalId);
-      checkOrderStatusLoop();
-      orderCheckIntervalId=setInterval(()=>checkOrderStatusLoop(), ORDER_STATUS_INTERVAL_MS);
-
       if(window._sholatRefreshId) clearInterval(window._sholatRefreshId);
       window._sholatRefreshId = setInterval(async ()=>{
         const before = JSON.stringify(sholatTimings||{});
@@ -2434,7 +2140,6 @@ if (isset($_GET['text'])) {
     if(logRefreshIntervalId){ clearInterval(logRefreshIntervalId); logRefreshIntervalId=null; }
     if(presensiCheckIntervalId){ clearInterval(presensiCheckIntervalId); presensiCheckIntervalId=null; }
     if(sholatCheckIntervalId){ clearInterval(sholatCheckIntervalId); sholatCheckIntervalId=null; }
-    if(orderCheckIntervalId){ clearInterval(orderCheckIntervalId); orderCheckIntervalId=null; }
     if(window._sholatRefreshId){ clearInterval(window._sholatRefreshId); window._sholatRefreshId=null; }
     if(midnightResetTimeoutId){ clearTimeout(midnightResetTimeoutId); midnightResetTimeoutId=null; }
     if(sholatRefreshTimeoutId){ clearTimeout(sholatRefreshTimeoutId); sholatRefreshTimeoutId=null; }
@@ -2595,17 +2300,6 @@ if (isset($_GET['text'])) {
     tabLogClient.addEventListener('click', ()=>{
       setActiveLogTab('client');
       fetchLogs();
-    });
-  }
-
-  if(btnResetSibon){
-    btnResetSibon.addEventListener('click', async ()=>{
-      resetSibonOrderMarkers();
-      pushOrderReadHistory('Reset marker notifikasi Sibonlabel. Status terbaru akan dicek ulang.');
-      renderOrderReadHistory();
-      try{
-        await checkOrderStatusLoop();
-      }catch(_){}
     });
   }
 
