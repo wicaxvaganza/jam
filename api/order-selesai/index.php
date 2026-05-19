@@ -13,7 +13,7 @@ if (!jam_is_api_key_valid()) {
 
 $message = 'Order telah diselesaikan, terimakasih!';
 $speak = isset($_GET['speak']) ? (string)$_GET['speak'] : '0';
-$mode = isset($_GET['mode']) ? strtolower((string)$_GET['mode']) : 'queue';
+$mode = isset($_GET['mode']) ? strtolower((string)$_GET['mode']) : 'direct';
 $lang = isset($_GET['tl']) ? preg_replace('/[^a-zA-Z\-]/', '', (string)$_GET['tl']) : 'id';
 $speed = isset($_GET['ttsspeed']) ? preg_replace('/[^0-9\.]/', '', (string)$_GET['ttsspeed']) : '1';
 if ($lang === '') $lang = 'id';
@@ -25,7 +25,10 @@ $queueId = null;
 $speakError = null;
 
 if ($speak === '1') {
-    if ($mode === 'direct') {
+    if ($mode === 'queue') {
+        list($queued, $queueId, $queueErr) = jam_enqueue_tts($message, $lang, $speed, 'order-selesai');
+        if (!$queued) $speakError = $queueErr;
+    } else {
         list($okAudio, $audioBytes, $audioErr) = jam_fetch_tts_audio($message, $lang, $speed);
         if (!$okAudio) {
             $speakError = $audioErr;
@@ -33,9 +36,6 @@ if ($speak === '1') {
             list($spoken, $playErr) = jam_play_audio_bytes_windows($audioBytes, $message);
             $speakError = $playErr;
         }
-    } else {
-        list($queued, $queueId, $queueErr) = jam_enqueue_tts($message, $lang, $speed, 'order-selesai');
-        if (!$queued) $speakError = $queueErr;
     }
 }
 
