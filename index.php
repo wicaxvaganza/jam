@@ -2,6 +2,59 @@
 @ini_set('display_errors', '0');
 @error_reporting(0);
 
+// --- simple API route by URL path ---
+$requestUri = isset($_SERVER['REQUEST_URI']) ? (string)$_SERVER['REQUEST_URI'] : '/';
+$requestPath = parse_url($requestUri, PHP_URL_PATH);
+$requestPath = is_string($requestPath) ? rtrim($requestPath, '/') : '';
+$basePath = '/' . trim(basename(__DIR__), '/');
+$apiOrderBaruPath = $basePath . '/api/order-baru-sibonlabel';
+$apiOrderSelesaiPath = $basePath . '/api/order-selesai';
+$apiAccessKey = '123321';
+
+function get_request_api_key() {
+    $fromQuery = isset($_GET['api_key']) ? (string)$_GET['api_key'] : '';
+    if ($fromQuery !== '') return $fromQuery;
+
+    if (isset($_SERVER['HTTP_X_API_KEY']) && (string)$_SERVER['HTTP_X_API_KEY'] !== '') {
+        return (string)$_SERVER['HTTP_X_API_KEY'];
+    }
+    return '';
+}
+
+function deny_invalid_api_key() {
+    http_response_code(401);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode([
+        'ok' => false,
+        'error' => 'Unauthorized: API key invalid'
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+if ($requestPath === $apiOrderBaruPath || $requestPath === '/api/order-baru-sibonlabel') {
+    if (get_request_api_key() !== $apiAccessKey) {
+        deny_invalid_api_key();
+    }
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode([
+        'ok' => true,
+        'message' => 'Ada order baru sibonlabel, cek ya gaes!'
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+if ($requestPath === $apiOrderSelesaiPath || $requestPath === '/api/order-selesai') {
+    if (get_request_api_key() !== $apiAccessKey) {
+        deny_invalid_api_key();
+    }
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode([
+        'ok' => true,
+        'message' => 'Order telah diselesaikan, terimakasih!'
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 // --- config ---
 $LOG_PATH = __DIR__ . '/tts_activity.log';
 $CLIENT_LOG_PATH = __DIR__ . '/client_error.log'; // log terpisah untuk error client
@@ -2323,6 +2376,7 @@ if (isset($_GET['text'])) {
 </script>
 </body>
 </html>
+
 
 
 
