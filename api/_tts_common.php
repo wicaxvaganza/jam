@@ -18,6 +18,10 @@ function jam_log_file() {
     return jam_root_dir() . DIRECTORY_SEPARATOR . 'tts_activity.log';
 }
 
+function jam_dedup_file() {
+    return jam_root_dir() . DIRECTORY_SEPARATOR . 'tts_dedup.json';
+}
+
 function jam_append_log($line) {
     $ts = date('d-m-Y H:i:s');
     @file_put_contents(jam_log_file(), $ts . ' | QUEUE | ' . $line . PHP_EOL, FILE_APPEND);
@@ -114,4 +118,52 @@ function jam_play_audio_bytes_windows($audioBytes, $text) {
     }
 
     return [true, null];
+}
+
+function jam_should_skip_duplicate($dedupKey, $windowSec = 30) {
+    $file = jam_dedup_file();
+    $fh = @fopen($file, 'c+');
+    if (!$fh) return [false, null];
+    if (!flock($fh, LOCK_EX)) {
+        fclose($fh);
+        return [false, null];
+    }
+
+    rewind($fh);
+    $raw = stream_get_contents($fh);
+    $state = [];
+    if ($raw !== false && trim($raw) !== '') {
+        $decoded = @json_decode($raw, true);
+        if (is_array($decoded)) $state = $decoded;
+    }
+
+    $now = time();
+    foreach ($state as $k => $ts) {
+        if (!is_numeric($ts) || ($now - (int)$ts) > max(1, (int)$windowSec)) {
+            unset($state[$k]);
+        }
+    }
+
+    $skip = false;
+    $remaining = null;
+    if (isset($state[$dedupKey])) {
+        $elapsed = $now - (int)$state[$dedupKey];
+        if ($elapsed < (int)$windowSec) {
+            $skip = true;
+            $remaining = (int)$windowSec - $elapsed;
+        }
+    }
+
+    if (!$skip) {
+        $state[$dedupKey] = $now;
+    }
+
+    ftruncate($fh, 0);
+    rewind($fh);
+    @fwrite($fh, json_encode($state, JSON_UNESCAPED_UNICODE));
+    fflush($fh);
+    flock($fh, LOCK_UN);
+    fclose($fh);
+
+    return [$skip, $remaining];
 }
