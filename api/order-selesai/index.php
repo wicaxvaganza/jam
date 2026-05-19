@@ -13,7 +13,7 @@ if (!jam_is_api_key_valid()) {
 
 $message = 'Order telah diselesaikan, terimakasih!';
 $speak = isset($_GET['speak']) ? (string)$_GET['speak'] : '0';
-$mode = isset($_GET['mode']) ? strtolower((string)$_GET['mode']) : 'queue';
+$mode = isset($_GET['mode']) ? strtolower((string)$_GET['mode']) : 'direct';
 $lang = isset($_GET['tl']) ? preg_replace('/[^a-zA-Z\-]/', '', (string)$_GET['tl']) : 'id';
 $speed = isset($_GET['ttsspeed']) ? preg_replace('/[^0-9\.]/', '', (string)$_GET['ttsspeed']) : '1';
 if ($lang === '') $lang = 'id';
@@ -48,4 +48,5 @@ echo json_encode([
     'queue_id' => $queueId,
     'speak_error' => $speakError
 ], JSON_UNESCAPED_UNICODE);
+
 
