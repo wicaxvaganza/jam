@@ -437,6 +437,10 @@ if (isset($_GET['text'])) {
           </div>
           <div id="monitorEventList" class="mt-3 flex max-h-80 flex-col gap-2 overflow-y-auto pr-1"></div>
         </div>
+        <div class="mt-3 max-w-md rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h3 class="text-base font-semibold text-slate-800">Riwayat Notifikasi Sibonlabel</h3>
+          <div id="monitorOrderReads" class="mt-2 flex max-h-56 flex-col gap-2 overflow-y-auto pr-1"></div>
+        </div>
       </div>
     </div>
 
@@ -552,6 +556,7 @@ if (isset($_GET['text'])) {
   const monitorNextCountdownEl=document.getElementById('monitorNextCountdown');
   const monitorNextDateEl=document.getElementById('monitorNextDate');
   const monitorEventListEl=document.getElementById('monitorEventList');
+  const monitorOrderReadsEl=document.getElementById('monitorOrderReads');
 
   function setActiveTab(which){
     const tabs = [
@@ -590,6 +595,8 @@ if (isset($_GET['text'])) {
   let orderAnnouncementBusy = false;
   const orderAnnouncementQueue = [];
   const pendingOrderAnnouncements = { new_order: {}, completed_order: {} };
+  const orderReadHistory = [];
+  const ORDER_READ_HISTORY_LIMIT = 20;
   const PLAYBACK_TIMEOUT_MS = 60000;
   const ORDER_STATUS_URL = 'https://sibonlabel.rsudblambangan.id/status';
   const ORDER_STATUS_INTERVAL_MS = 5000;
@@ -717,6 +724,33 @@ if (isset($_GET['text'])) {
     });
   }
 
+  function pushOrderReadHistory(text){
+    const safe = (text || '').toString().trim();
+    if(!safe) return;
+    orderReadHistory.unshift({ ts: Date.now(), text: safe });
+    if(orderReadHistory.length > ORDER_READ_HISTORY_LIMIT){
+      orderReadHistory.length = ORDER_READ_HISTORY_LIMIT;
+    }
+  }
+
+  function renderOrderReadHistory(){
+    if(!monitorOrderReadsEl) return;
+    monitorOrderReadsEl.innerHTML = '';
+    if(!orderReadHistory.length){
+      const empty = document.createElement('div');
+      empty.className = 'rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500';
+      empty.textContent = 'Belum ada notifikasi sibonlabel yang dibacakan.';
+      monitorOrderReadsEl.appendChild(empty);
+      return;
+    }
+    orderReadHistory.forEach((it)=>{
+      const row = document.createElement('div');
+      row.className = 'rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700';
+      row.textContent = `${fmtHHMM(it.ts)} - ${it.text}`;
+      monitorOrderReadsEl.appendChild(row);
+    });
+  }
+
   async function processOrderAnnouncementQueue(){
     if(orderAnnouncementBusy) return;
     orderAnnouncementBusy = true;
@@ -729,6 +763,8 @@ if (isset($_GET['text'])) {
           const status = await playText(item.text, { ttsSpeed: '0.92' });
           if(status === 'ok'){
             markOrderSpoken(item.type, item.id);
+            pushOrderReadHistory(item.text);
+            renderOrderReadHistory();
             fetchLogsAfterDelay();
           }
         }catch(e){
@@ -1453,6 +1489,7 @@ if (isset($_GET['text'])) {
 
   function renderMonitoringEvents(){
     if(!monitorEventListEl || !monitorNextCountdownEl || !monitorNextDateEl) return;
+    renderOrderReadHistory();
     const items = buildMonitoringEvents();
     monitorEventListEl.innerHTML = '';
 
