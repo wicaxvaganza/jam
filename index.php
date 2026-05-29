@@ -240,6 +240,85 @@ if (isset($_GET['adzan'])) {
     exit;
 }
 
+/* ========= Holiday endpoint (server-side fetch + local fallback) ========= */
+if (isset($_GET['holiday'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    $year = isset($_GET['year']) ? preg_replace('/[^0-9]/', '', (string)$_GET['year']) : '';
+    if ($year === '' || strlen($year) !== 4) {
+        http_response_code(400);
+        echo json_encode(["ok" => false, "error" => "Invalid year"], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $liburUrl = "https://app.opica.id/api-libur/api?year={$year}";
+    $liburContext = stream_context_create([
+        'http' => [
+            'method' => 'GET',
+            'header' => "Accept: application/json\r\nUser-Agent: Mozilla/5.0\r\n",
+            'timeout' => 12,
+            'ignore_errors' => true
+        ]
+    ]);
+
+    $rawLibur = @file_get_contents($liburUrl, false, $liburContext);
+    if ($rawLibur === false && function_exists('curl_init')) {
+        $ch = curl_init($liburUrl);
+        if ($ch) {
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_TIMEOUT => 12,
+                CURLOPT_USERAGENT => 'Mozilla/5.0',
+                CURLOPT_HTTPHEADER => ['Accept: application/json']
+            ]);
+            $curlRes = curl_exec($ch);
+            $curlCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if (is_string($curlRes) && $curlRes !== '' && $curlCode >= 200 && $curlCode < 300) {
+                $rawLibur = $curlRes;
+            }
+        }
+    }
+
+    $decodedLibur = is_string($rawLibur) ? json_decode($rawLibur, true) : null;
+    $liburItems = [];
+    if (is_array($decodedLibur)) {
+        if (isset($decodedLibur[0]) && is_array($decodedLibur[0])) {
+            $liburItems = $decodedLibur;
+        } elseif (isset($decodedLibur['data']) && is_array($decodedLibur['data'])) {
+            $liburItems = $decodedLibur['data'];
+        }
+    }
+
+    if (empty($liburItems)) {
+        $fallbackFile = __DIR__ . DIRECTORY_SEPARATOR . $year . '.json';
+        if (is_file($fallbackFile)) {
+            $fallbackRaw = @file_get_contents($fallbackFile);
+            $fallbackDecoded = is_string($fallbackRaw) ? json_decode($fallbackRaw, true) : null;
+            if (is_array($fallbackDecoded)) {
+                if (isset($fallbackDecoded[0]) && is_array($fallbackDecoded[0])) {
+                    $liburItems = $fallbackDecoded;
+                } elseif (isset($fallbackDecoded['data']) && is_array($fallbackDecoded['data'])) {
+                    $liburItems = $fallbackDecoded['data'];
+                }
+            }
+        }
+    }
+
+    if (empty($liburItems)) {
+        http_response_code(502);
+        echo json_encode(["ok" => false, "error" => "Failed to load holiday data"], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    echo json_encode([
+        "ok" => true,
+        "year" => $year,
+        "data" => array_values($liburItems)
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 // --- TTS fetcher ---
 if (isset($_GET['text'])) {
     $text = trim((string) $_GET['text']);
@@ -592,7 +671,7 @@ if (isset($_GET['text'])) {
   let fireRunBusy = false;
   let lastFireRunMinuteKey = null;
   const PLAYBACK_TIMEOUT_MS = 60000;
-  const HOLIDAY_API_URL = 'https://app.opica.id/api-libur/api';
+  const HOLIDAY_API_URL = window.location.pathname + '?holiday=1';
   const nationalHolidayByYear = {};
 
   // Sholat state
@@ -1009,7 +1088,7 @@ if (isset($_GET['text'])) {
     const y = Number(year);
     if(!Number.isFinite(y)) return;
     try{
-      const res = await fetchWithTimeout(HOLIDAY_API_URL+'?year='+encodeURIComponent(String(y)), {}, 10000);
+      const res = await fetchWithTimeout(HOLIDAY_API_URL+'&year='+encodeURIComponent(String(y)), {}, 10000);
       if(!res.ok) throw new Error('HTTP '+res.status);
       const payload = await res.json();
       const rows = Array.isArray(payload && payload.data)
