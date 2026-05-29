@@ -400,6 +400,9 @@ if (isset($_GET['text'])) {
     <div class="mt-1 text-slate-500 text-sm">
       Reload halaman dalam: <span id="reloadInfo" class="font-medium text-slate-700">-</span>
     </div>
+    <div id="holidayApiWarning" class="mt-2 hidden rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+      Peringatan: gagal membaca API hari libur nasional. Sistem memakai cache lokal (jika ada).
+    </div>
 
     <!-- Tabs -->
     <div class="mt-5">
@@ -534,6 +537,7 @@ if (isset($_GET['text'])) {
   const countdownEl=document.getElementById('countdown'),
         statusBadge=document.getElementById('statusBadge'),
         modeInfo=document.getElementById('modeInfo'),
+        holidayApiWarningEl=document.getElementById('holidayApiWarning'),
         logEl=document.getElementById('log'),
         logTitleEl=document.getElementById('logTitle'),
         tabLogTts=document.getElementById('tabLogTts'),
@@ -591,6 +595,7 @@ if (isset($_GET['text'])) {
   const HOLIDAY_CACHE_KEY_PREFIX = 'libur_nasional_v1_';
   const HOLIDAY_CACHE_META_KEY_PREFIX = 'libur_nasional_meta_v1_';
   const HOLIDAY_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  const HOLIDAY_API_URL = 'https://app.opica.id/api-libur/api';
   const nationalHolidayByYear = {};
 
   // Sholat state
@@ -1014,27 +1019,47 @@ if (isset($_GET['text'])) {
     const y = d.getFullYear();
     return getHolidaySetYear(y).has(dateKeyLocal(d));
   }
+  function setHolidayApiWarning(show, message=''){
+    if(!holidayApiWarningEl) return;
+    if(show){
+      holidayApiWarningEl.textContent = message || 'Peringatan: gagal membaca API hari libur nasional. Sistem memakai cache lokal (jika ada).';
+      holidayApiWarningEl.classList.remove('hidden');
+      return;
+    }
+    holidayApiWarningEl.classList.add('hidden');
+  }
   async function loadNationalHolidayYear(year){
     const y = Number(year);
     if(!Number.isFinite(y)) return;
     const hasCache = getHolidaySetYear(y).size > 0;
     if(hasCache && isHolidayCacheFreshYear(y)) return;
     try{
-      const res = await fetchWithTimeout('https://libur.deno.dev/api?year='+encodeURIComponent(String(y)), {}, 10000);
+      const res = await fetchWithTimeout(HOLIDAY_API_URL+'?year='+encodeURIComponent(String(y)), {}, 10000);
       if(!res.ok) throw new Error('HTTP '+res.status);
       const rows = await res.json();
       const list = Array.isArray(rows)
         ? rows
-            .filter(r => r && typeof r.date === 'string')
-            .map(r => r.date)
+            .map(r => {
+              if(!r || typeof r !== 'object') return null;
+              if(typeof r.date === 'string') return r.date;
+              if(typeof r.tanggal === 'string') return r.tanggal;
+              if(typeof r.holiday_date === 'string') return r.holiday_date;
+              return null;
+            })
+            .filter(x => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x))
         : [];
+      if(!list.length) throw new Error('payload kosong/tidak valid');
       const uniq = Array.from(new Set(list));
       nationalHolidayByYear[y] = new Set(uniq);
+      setHolidayApiWarning(false);
       try{
         localStorage.setItem(HOLIDAY_CACHE_KEY_PREFIX + String(y), JSON.stringify(uniq));
         localStorage.setItem(HOLIDAY_CACHE_META_KEY_PREFIX + String(y), JSON.stringify({ fetchedAt: Date.now() }));
       }catch(_){}
-    }catch(_){
+    }catch(e){
+      const em = errMessage(e);
+      setHolidayApiWarning(true, 'Peringatan: gagal membaca API hari libur nasional ('+em+'). Sistem memakai cache lokal (jika ada).');
+      logClient('holiday api fetch failed year='+y+': '+em);
       loadHolidayCacheYear(y);
     }
   }
