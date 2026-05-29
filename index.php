@@ -400,7 +400,7 @@ if (isset($_GET['text'])) {
     <div class="mt-1 text-slate-500 text-sm">
       Reload halaman dalam: <span id="reloadInfo" class="font-medium text-slate-700">-</span>
     </div>
-    <div id="holidayApiWarning" class="mt-2 hidden rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+    <div id="holidayApiWarning" class="mt-2 hidden rounded-lg border px-3 py-2 text-sm">
       Peringatan: gagal membaca API hari libur nasional. Sistem memakai cache lokal (jika ada).
     </div>
 
@@ -1019,10 +1019,16 @@ if (isset($_GET['text'])) {
     const y = d.getFullYear();
     return getHolidaySetYear(y).has(dateKeyLocal(d));
   }
-  function setHolidayApiWarning(show, message=''){
+  function setHolidayApiWarning(show, message='', isSuccess=false){
     if(!holidayApiWarningEl) return;
+    holidayApiWarningEl.classList.remove('border-amber-300','bg-amber-50','text-amber-800','border-emerald-300','bg-emerald-50','text-emerald-800');
     if(show){
       holidayApiWarningEl.textContent = message || 'Peringatan: gagal membaca API hari libur nasional. Sistem memakai cache lokal (jika ada).';
+      if(isSuccess){
+        holidayApiWarningEl.classList.add('border-emerald-300','bg-emerald-50','text-emerald-800');
+      }else{
+        holidayApiWarningEl.classList.add('border-amber-300','bg-amber-50','text-amber-800');
+      }
       holidayApiWarningEl.classList.remove('hidden');
       return;
     }
@@ -1051,7 +1057,7 @@ if (isset($_GET['text'])) {
       if(!list.length) throw new Error('payload kosong/tidak valid');
       const uniq = Array.from(new Set(list));
       nationalHolidayByYear[y] = new Set(uniq);
-      setHolidayApiWarning(false);
+      setHolidayApiWarning(true, 'API libur OK: '+uniq.length+' tanggal terbaca untuk tahun '+y+'.', true);
       try{
         localStorage.setItem(HOLIDAY_CACHE_KEY_PREFIX + String(y), JSON.stringify(uniq));
         localStorage.setItem(HOLIDAY_CACHE_META_KEY_PREFIX + String(y), JSON.stringify({ fetchedAt: Date.now() }));
