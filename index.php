@@ -5,7 +5,7 @@
 // --- config ---
 $LOG_PATH = __DIR__ . '/tts_activity.log';
 $CLIENT_LOG_PATH = __DIR__ . '/client_error.log'; // log terpisah untuk error client
-$MAX_LOG_LINES = 50;
+$MAX_LOG_LINES = 1000;
 $RATE_LIMIT_PER_MIN = 8;
 $MAX_LOG_LINE_LENGTH = 500;
 
@@ -40,7 +40,7 @@ function sanitize_log_line($line, $max_len = 500) {
 }
 
 // --- append/read log with locking ---
-function append_log_line($path, $line, $max_lines = 50, $max_len = 500) {
+function append_log_line($path, $line, $max_lines = 1000, $max_len = 500) {
     $safe = sanitize_log_line($line, $max_len);
     $fh = @fopen($path, 'c+');
     if (!$fh) return false;
@@ -60,7 +60,7 @@ function append_log_line($path, $line, $max_lines = 50, $max_len = 500) {
     return true;
 }
 
-function read_log_lines($path, $max_lines = 50) {
+function read_log_lines($path, $max_lines = 1000) {
     if (!file_exists($path)) return [];
     $content = @file_get_contents($path);
     if ($content === false || trim($content) === '') return [];
@@ -112,7 +112,7 @@ if (isset($_GET['clientlog'])) {
     $msg = isset($_GET['msg']) ? (string)$_GET['msg'] : 'clientlog';
     $ip  = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
     $line = get_jakarta_ts() . " | $ip | CLIENT | " . sanitize_log_line($msg, 500);
-    @file_put_contents($CLIENT_LOG_PATH, $line . PHP_EOL, FILE_APPEND);
+    append_log_line($CLIENT_LOG_PATH, $line, $MAX_LOG_LINES, $MAX_LOG_LINE_LENGTH);
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['ok' => true]);
     exit;
@@ -484,6 +484,9 @@ if (isset($_GET['text'])) {
     <div id="holidayApiWarning" class="mt-2 hidden rounded-lg border px-3 py-2 text-sm">
       Peringatan: gagal membaca API hari libur nasional.
     </div>
+    <div id="audioBlockWarning" class="mt-2 hidden rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+      Audio diblokir browser (autoplay). Klik di halaman ini sekali untuk aktifkan lagi suara.
+    </div>
 
     <!-- Tabs -->
     <div class="mt-5">
@@ -619,6 +622,7 @@ if (isset($_GET['text'])) {
         statusBadge=document.getElementById('statusBadge'),
         modeInfo=document.getElementById('modeInfo'),
         holidayApiWarningEl=document.getElementById('holidayApiWarning'),
+        audioBlockWarningEl=document.getElementById('audioBlockWarning'),
         logEl=document.getElementById('log'),
         logTitleEl=document.getElementById('logTitle'),
         tabLogTts=document.getElementById('tabLogTts'),
@@ -673,6 +677,8 @@ if (isset($_GET['text'])) {
   let fireRunBusy = false;
   let lastFireRunMinuteKey = null;
   const PLAYBACK_TIMEOUT_MS = 60000;
+  let audioBlockedByPolicy = false;
+  const pendingAutoplayRetries = new Map();
   const HOLIDAY_API_URL = window.location.pathname + '?holiday=1';
   const nationalHolidayByYear = {};
 
@@ -874,9 +880,18 @@ if (isset($_GET['text'])) {
         if(status === 'error'){
           const em = errMessage(err);
           logClient('playText error: '+em);
+          if(isAutoplayBlockedError(err)){
+            logClient('autoplay blocked: playText');
+            setAudioBlockedState(true);
+          }
           reject(err || new Error('playback error'));
         }
-        else resolve(status);
+        else {
+          if(status === 'ok' && audioBlockedByPolicy){
+            setAudioBlockedState(false);
+          }
+          resolve(status);
+        }
       };
 
       if(trackAsTest){
@@ -949,9 +964,18 @@ if (isset($_GET['text'])) {
         if(status === 'error'){
           const em = errMessage(err);
           logClient('playKaget error: '+em);
+          if(isAutoplayBlockedError(err)){
+            logClient('autoplay blocked: playKaget');
+            setAudioBlockedState(true);
+          }
           reject(err || new Error('playback error'));
         }
-        else resolve(status);
+        else {
+          if(status === 'ok' && audioBlockedByPolicy){
+            setAudioBlockedState(false);
+          }
+          resolve(status);
+        }
       };
 
       if(trackAsTest){
@@ -1066,6 +1090,43 @@ if (isset($_GET['text'])) {
   function getHolidaySetYear(year){
     return nationalHolidayByYear[year] instanceof Set ? nationalHolidayByYear[year] : new Set();
   }
+
+  function isAutoplayBlockedError(err){
+    const msg = (errMessage(err) || '').toLowerCase();
+    return (
+      msg.includes("didn't interact with the document first") ||
+      msg.includes('notallowederror') ||
+      msg.includes('autoplay')
+    );
+  }
+
+  function setAudioBlockedState(blocked){
+    audioBlockedByPolicy = !!blocked;
+    if(audioBlockWarningEl){
+      audioBlockWarningEl.classList.toggle('hidden', !audioBlockedByPolicy);
+    }
+  }
+
+  function queueAutoplayRetry(key, runner){
+    if(!key || typeof runner !== 'function') return;
+    pendingAutoplayRetries.set(key, runner);
+  }
+
+  async function flushAutoplayRetries(){
+    if(!pendingAutoplayRetries.size) return;
+    const entries = Array.from(pendingAutoplayRetries.entries());
+    pendingAutoplayRetries.clear();
+    for(const [key, runner] of entries){
+      try{
+        await runner();
+      }catch(e){
+        if(isAutoplayBlockedError(e)){
+          queueAutoplayRetry(key, runner);
+          setAudioBlockedState(true);
+        }
+      }
+    }
+  }
   function isNationalHolidayDate(dateObj){
     const d = new Date(dateObj);
     const y = d.getFullYear();
@@ -1114,7 +1175,7 @@ if (isset($_GET['text'])) {
     }catch(e){
       const em = errMessage(e);
       if(optional){
-        logClient('holiday api fetch failed for optional year='+y+': '+em);
+        console.warn('holiday api fetch failed for optional year='+y+': '+em);
         return;
       }
       setHolidayApiWarning(true, 'Peringatan: gagal membaca API hari libur nasional tahun '+y+' ('+em+').');
@@ -1764,6 +1825,16 @@ if (isset($_GET['text'])) {
             await playText(kal);
             fetchLogsAfterDelay();
           }catch(e){
+            if(isAutoplayBlockedError(e)){
+              const retryKey = `retry-sholat-${tkey}-${k}`;
+              queueAutoplayRetry(retryKey, async ()=>{
+                await playText(kal);
+                if(!playedSholat[tkey]) playedSholat[tkey] = {};
+                playedSholat[tkey][k] = 1;
+                fetchLogsAfterDelay();
+              });
+              if(playedSholat[tkey]) delete playedSholat[tkey][k];
+            }
             console.error('Sholat fireRun error', e);
           }
         });
@@ -1785,6 +1856,14 @@ if (isset($_GET['text'])) {
             await playText(buildPresensiAnnouncementForNow(a.label));
             fetchLogsAfterDelay();
           }catch(e){
+            if(isAutoplayBlockedError(e)){
+              const retryKey = `retry-presensi-${tkey}-${a.id}`;
+              queueAutoplayRetry(retryKey, async ()=>{
+                await playText(buildPresensiAnnouncementForNow(a.label));
+                playedAlerts[a.id] = tkey;
+                fetchLogsAfterDelay();
+              });
+            }
             delete playedAlerts[a.id];
             console.error('Presensi fireRun error', e);
           }
@@ -1809,6 +1888,14 @@ if (isset($_GET['text'])) {
             playedPulangPlus5[key] = tkey;
             fetchLogsAfterDelay();
           }catch(e){
+            if(isAutoplayBlockedError(e)){
+              const retryKey = `retry-plus5-${tkey}-${key}`;
+              queueAutoplayRetry(retryKey, async ()=>{
+                await playText(buildPulangPlus5Message(now), { withBell: false });
+                playedPulangPlus5[key] = tkey;
+                fetchLogsAfterDelay();
+              });
+            }
             console.error('Pulang syahdu +5 fireRun error', e);
           }finally{
             pendingPulangPlus5.delete(key);
@@ -1834,6 +1921,14 @@ if (isset($_GET['text'])) {
             playedPantunPulangPlus20[key] = tkey;
             fetchLogsAfterDelay();
           }catch(e){
+            if(isAutoplayBlockedError(e)){
+              const retryKey = `retry-pantun20-${tkey}-${key}`;
+              queueAutoplayRetry(retryKey, async ()=>{
+                await playText(pickRandomPantunPulangMessage(), { withBell: false });
+                playedPantunPulangPlus20[key] = tkey;
+                fetchLogsAfterDelay();
+              });
+            }
             console.error('Pantun pulang +20 fireRun error', e);
           }finally{
             pendingPantunPulangPlus20.delete(key);
@@ -1852,6 +1947,15 @@ if (isset($_GET['text'])) {
             await playText(text);
             fetchLogsAfterDelay();
           }catch(e){
+            if(isAutoplayBlockedError(e)){
+              const retryKey = `retry-hourly-${tkey}-${hh}`;
+              queueAutoplayRetry(retryKey, async ()=>{
+                await playText(text);
+                window.lastPlayedHour = now.getHours();
+                fetchLogsAfterDelay();
+              });
+              window.lastPlayedHour = null;
+            }
             console.error(e);
           }
         });
@@ -1888,6 +1992,17 @@ if (isset($_GET['text'])) {
               logKaget(`PLAY ${hh}:${curMinute} (${mode})`);
               fetchLogsAfterDelay();
             }catch(e){
+              if(isAutoplayBlockedError(e)){
+                const retryKey = `retry-kaget-${mark}-${nowMinute}`;
+                queueAutoplayRetry(retryKey, async ()=>{
+                  await playKaget();
+                  const curMinuteRetry = String(nowMinute).padStart(2,'0');
+                  const modeRetry = (nowMinute === 31 && hasPresensiAtHalfHour) ? 'deferred+1m' : 'normal';
+                  logKaget(`PLAY ${hh}:${curMinuteRetry} (${modeRetry})`);
+                  fetchLogsAfterDelay();
+                });
+                lastPlayedHalfHourKey = null;
+              }
               const curMinute = String(nowMinute).padStart(2,'0');
               const em = (e && e.message) ? e.message : String(e);
               logKaget(`ERROR ${hh}:${curMinute} ${em}`);
@@ -2276,6 +2391,18 @@ if (isset($_GET['text'])) {
   btnStart.addEventListener('click', ()=>{
     startEngine({withVoice:true, auto:false});
   });
+
+  async function onUserInteractionUnlock(){
+    if(!audioBlockedByPolicy && pendingAutoplayRetries.size === 0) return;
+    setAudioBlockedState(false);
+    await flushAutoplayRetries();
+  }
+
+  document.addEventListener('pointerdown', onUserInteractionUnlock, true);
+  document.addEventListener('keydown', onUserInteractionUnlock, true);
+  if(audioBlockWarningEl){
+    audioBlockWarningEl.addEventListener('click', onUserInteractionUnlock);
+  }
 
   btnStop.addEventListener('click', async ()=>{
     if(!started) return;
