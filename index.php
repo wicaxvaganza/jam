@@ -240,53 +240,6 @@ if (isset($_GET['adzan'])) {
     exit;
 }
 
-/* ========= Holiday proxy (libur nasional) ========= */
-if (isset($_GET['holiday'])) {
-    header('Content-Type: application/json; charset=utf-8');
-
-    $year = isset($_GET['year']) ? preg_replace('/[^0-9]/', '', (string)$_GET['year']) : '';
-    if ($year === '' || strlen($year) !== 4) {
-        http_response_code(400);
-        echo json_encode(["ok" => false, "error" => "Invalid year"], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-
-    $url = "https://app.opica.id/api-libur/api?year=" . rawurlencode($year);
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_USERAGENT, "Mozilla/5.0");
-    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
-    $result = curl_exec($ch);
-    $code   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-
-    if ($code !== 200 || !$result) {
-        http_response_code(502);
-        echo json_encode([
-            "ok" => false,
-            "error" => "Failed to fetch holiday API",
-            "code" => $code
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-
-    $decoded = json_decode($result, true);
-    if (!is_array($decoded)) {
-        http_response_code(502);
-        echo json_encode(["ok" => false, "error" => "Invalid holiday payload"], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-
-    echo json_encode([
-        "ok" => true,
-        "source" => "opica",
-        "year" => $year,
-        "data" => isset($decoded['data']) && is_array($decoded['data']) ? $decoded['data'] : []
-    ], JSON_UNESCAPED_UNICODE);
-    exit;
-}
-
 // --- TTS fetcher ---
 if (isset($_GET['text'])) {
     $text = trim((string) $_GET['text']);
@@ -639,7 +592,7 @@ if (isset($_GET['text'])) {
   let fireRunBusy = false;
   let lastFireRunMinuteKey = null;
   const PLAYBACK_TIMEOUT_MS = 60000;
-  const HOLIDAY_API_URL = window.location.pathname + '?holiday=1';
+  const HOLIDAY_API_URL = 'https://app.opica.id/api-libur/api';
   const nationalHolidayByYear = {};
 
   // Sholat state
@@ -1056,10 +1009,12 @@ if (isset($_GET['text'])) {
     const y = Number(year);
     if(!Number.isFinite(y)) return;
     try{
-      const res = await fetchWithTimeout(HOLIDAY_API_URL+'&year='+encodeURIComponent(String(y)), {}, 10000);
+      const res = await fetchWithTimeout(HOLIDAY_API_URL+'?year='+encodeURIComponent(String(y)), {}, 10000);
       if(!res.ok) throw new Error('HTTP '+res.status);
       const payload = await res.json();
-      const rows = Array.isArray(payload && payload.data) ? payload.data : [];
+      const rows = Array.isArray(payload && payload.data)
+        ? payload.data
+        : (Array.isArray(payload) ? payload : []);
       const list = Array.isArray(rows)
         ? rows
             .map(r => {
@@ -1067,11 +1022,11 @@ if (isset($_GET['text'])) {
               if(typeof r.date === 'string') return r.date;
               if(typeof r.tanggal === 'string') return r.tanggal;
               if(typeof r.holiday_date === 'string') return r.holiday_date;
+              if(typeof r.holidayDate === 'string') return r.holidayDate;
               return null;
             })
             .filter(x => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x))
         : [];
-      if(!list.length) throw new Error('payload kosong/tidak valid');
       const uniq = Array.from(new Set(list));
       nationalHolidayByYear[y] = new Set(uniq);
       setHolidayApiWarning(true, 'API libur OK: '+uniq.length+' tanggal terbaca untuk tahun '+y+'.', true);
