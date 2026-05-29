@@ -282,15 +282,17 @@ if (isset($_GET['holiday'])) {
 
     $decodedLibur = is_string($rawLibur) ? json_decode($rawLibur, true) : null;
     $liburItems = [];
+    $decodedHasDataArray = false;
     if (is_array($decodedLibur)) {
         if (isset($decodedLibur[0]) && is_array($decodedLibur[0])) {
             $liburItems = $decodedLibur;
         } elseif (isset($decodedLibur['data']) && is_array($decodedLibur['data'])) {
+            $decodedHasDataArray = true;
             $liburItems = $decodedLibur['data'];
         }
     }
 
-    if (empty($liburItems)) {
+    if (empty($liburItems) && !$decodedHasDataArray) {
         $fallbackFile = __DIR__ . DIRECTORY_SEPARATOR . $year . '.json';
         if (is_file($fallbackFile)) {
             $fallbackRaw = @file_get_contents($fallbackFile);
@@ -1084,7 +1086,7 @@ if (isset($_GET['text'])) {
     }
     holidayApiWarningEl.classList.add('hidden');
   }
-  async function loadNationalHolidayYear(year){
+  async function loadNationalHolidayYear(year, optional=false){
     const y = Number(year);
     if(!Number.isFinite(y)) return;
     try{
@@ -1111,7 +1113,11 @@ if (isset($_GET['text'])) {
       setHolidayApiWarning(true, 'API libur OK: '+uniq.length+' tanggal terbaca untuk tahun '+y+'.', true);
     }catch(e){
       const em = errMessage(e);
-      setHolidayApiWarning(true, 'Peringatan: gagal membaca API hari libur nasional ('+em+').');
+      if(optional){
+        logClient('holiday api fetch failed for optional year='+y+': '+em);
+        return;
+      }
+      setHolidayApiWarning(true, 'Peringatan: gagal membaca API hari libur nasional tahun '+y+' ('+em+').');
       logClient('holiday api fetch failed year='+y+': '+em);
       nationalHolidayByYear[y] = new Set();
     }
@@ -2218,8 +2224,8 @@ if (isset($_GET['text'])) {
       renderSholatListPlaceholder();
       await loadSholatBanyuwangi({announceOnError: !auto});
       const now = new Date();
-      loadNationalHolidayYear(now.getFullYear());
-      loadNationalHolidayYear(now.getFullYear()+1);
+      await loadNationalHolidayYear(now.getFullYear(), false);
+      loadNationalHolidayYear(now.getFullYear()+1, true);
 
       scheduleRunner();
       scheduleSafeReload(1);
