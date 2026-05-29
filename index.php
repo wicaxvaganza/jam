@@ -401,7 +401,7 @@ if (isset($_GET['text'])) {
       Reload halaman dalam: <span id="reloadInfo" class="font-medium text-slate-700">-</span>
     </div>
     <div id="holidayApiWarning" class="mt-2 hidden rounded-lg border px-3 py-2 text-sm">
-      Peringatan: gagal membaca API hari libur nasional. Sistem memakai cache lokal (jika ada).
+      Peringatan: gagal membaca API hari libur nasional.
     </div>
 
     <!-- Tabs -->
@@ -592,9 +592,6 @@ if (isset($_GET['text'])) {
   let fireRunBusy = false;
   let lastFireRunMinuteKey = null;
   const PLAYBACK_TIMEOUT_MS = 60000;
-  const HOLIDAY_CACHE_KEY_PREFIX = 'libur_nasional_v1_';
-  const HOLIDAY_CACHE_META_KEY_PREFIX = 'libur_nasional_meta_v1_';
-  const HOLIDAY_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
   const HOLIDAY_API_URL = 'https://app.opica.id/api-libur/api';
   const nationalHolidayByYear = {};
 
@@ -985,33 +982,7 @@ if (isset($_GET['text'])) {
     const dd = String(d.getDate()).padStart(2,'0');
     return `${yyyy}-${mm}-${dd}`;
   }
-  function loadHolidayCacheYear(year){
-    try{
-      const raw = localStorage.getItem(HOLIDAY_CACHE_KEY_PREFIX + String(year));
-      if(!raw) return false;
-      const list = JSON.parse(raw);
-      if(!Array.isArray(list)) return false;
-      nationalHolidayByYear[year] = new Set(list.filter(x=>typeof x==='string'));
-      return true;
-    }catch(_){
-      return false;
-    }
-  }
-  function isHolidayCacheFreshYear(year){
-    try{
-      const raw = localStorage.getItem(HOLIDAY_CACHE_META_KEY_PREFIX + String(year));
-      if(!raw) return false;
-      const meta = JSON.parse(raw);
-      if(!meta || typeof meta.fetchedAt !== 'number') return false;
-      return (Date.now() - meta.fetchedAt) < HOLIDAY_CACHE_TTL_MS;
-    }catch(_){
-      return false;
-    }
-  }
   function getHolidaySetYear(year){
-    if(!(nationalHolidayByYear[year] instanceof Set)){
-      loadHolidayCacheYear(year);
-    }
     return nationalHolidayByYear[year] instanceof Set ? nationalHolidayByYear[year] : new Set();
   }
   function isNationalHolidayDate(dateObj){
@@ -1023,7 +994,7 @@ if (isset($_GET['text'])) {
     if(!holidayApiWarningEl) return;
     holidayApiWarningEl.classList.remove('border-amber-300','bg-amber-50','text-amber-800','border-emerald-300','bg-emerald-50','text-emerald-800');
     if(show){
-      holidayApiWarningEl.textContent = message || 'Peringatan: gagal membaca API hari libur nasional. Sistem memakai cache lokal (jika ada).';
+      holidayApiWarningEl.textContent = message || 'Peringatan: gagal membaca API hari libur nasional.';
       if(isSuccess){
         holidayApiWarningEl.classList.add('border-emerald-300','bg-emerald-50','text-emerald-800');
       }else{
@@ -1037,8 +1008,6 @@ if (isset($_GET['text'])) {
   async function loadNationalHolidayYear(year){
     const y = Number(year);
     if(!Number.isFinite(y)) return;
-    const hasCache = getHolidaySetYear(y).size > 0;
-    if(hasCache && isHolidayCacheFreshYear(y)) return;
     try{
       const res = await fetchWithTimeout(HOLIDAY_API_URL+'?year='+encodeURIComponent(String(y)), {}, 10000);
       if(!res.ok) throw new Error('HTTP '+res.status);
@@ -1058,15 +1027,11 @@ if (isset($_GET['text'])) {
       const uniq = Array.from(new Set(list));
       nationalHolidayByYear[y] = new Set(uniq);
       setHolidayApiWarning(true, 'API libur OK: '+uniq.length+' tanggal terbaca untuk tahun '+y+'.', true);
-      try{
-        localStorage.setItem(HOLIDAY_CACHE_KEY_PREFIX + String(y), JSON.stringify(uniq));
-        localStorage.setItem(HOLIDAY_CACHE_META_KEY_PREFIX + String(y), JSON.stringify({ fetchedAt: Date.now() }));
-      }catch(_){}
     }catch(e){
       const em = errMessage(e);
-      setHolidayApiWarning(true, 'Peringatan: gagal membaca API hari libur nasional ('+em+'). Sistem memakai cache lokal (jika ada).');
+      setHolidayApiWarning(true, 'Peringatan: gagal membaca API hari libur nasional ('+em+').');
       logClient('holiday api fetch failed year='+y+': '+em);
-      loadHolidayCacheYear(y);
+      nationalHolidayByYear[y] = new Set();
     }
   }
   function pickRandomPulangSyahduMessage(){
