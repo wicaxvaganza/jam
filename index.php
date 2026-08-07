@@ -556,7 +556,8 @@ if (isset($_GET['text'])) {
     { id: 'pulang_sat',     label: 'Presensi Pulang (Sabtu)',   days: [6],       time: '12:30' }
   ];
   const DAILY_SHOPEE_TIME = '08:55';
-  const DAILY_SHOPEE_TEXT = 'Persiapan, jangan lupa war telur Shopee ya.';
+  const DAILY_SHOPEE_TEXT = 'Persiapan dulu ya... jangan lupa war telur Shopee. Santai, tapi jangan sampai kelewatan... hehehe.';
+  const DAILY_SHOPEE_TTS_SPEED = 0.85;
   const presensiPulangAlerts = presensiAlerts.filter(a => (a.label||'').toLowerCase().includes('pulang'));
   const pulangSyahduMessages = [
     'Selamat pulang ya, hati-hati di jalan dan jangan lupa berdoa.',
@@ -731,7 +732,7 @@ if (isset($_GET['text'])) {
 
 
   // ====== Helpers ======
-  function ttsUrlFor(text){return window.location.origin+window.location.pathname+'?text='+encodeURIComponent(text)+'&tl=id';}
+  function ttsUrlFor(text, speed=1){return window.location.origin+window.location.pathname+'?text='+encodeURIComponent(text)+'&tl=id&ttsspeed='+encodeURIComponent(String(speed));}
   function kagetUrl(){
     const basePath = window.location.pathname.replace(/\/[^\/]*$/, '/');
     return window.location.origin + basePath + 'kaget.mp3';
@@ -872,7 +873,7 @@ if (isset($_GET['text'])) {
 
   function playText(text, opts={}){
     return withPlaybackTimeout(()=>new Promise(async (resolve,reject)=>{
-      const { trackAsTest=false, onStart=null, onFinish=null, withBell=true } = opts;
+      const { trackAsTest=false, onStart=null, onFinish=null, withBell=true, ttsSpeed=1 } = opts;
       const ctx = { audio:null, stopped:false, done:false, finish:null };
 
       ctx.finish = (status, err=null)=>{
@@ -929,7 +930,7 @@ if (isset($_GET['text'])) {
         return;
       }
 
-      const audio=new Audio(ttsUrlFor(text));
+      const audio=new Audio(ttsUrlFor(text, ttsSpeed));
       ctx.audio = audio;
       audio.preload='auto';
 
@@ -1831,13 +1832,13 @@ if (isset($_GET['text'])) {
       hasOtherAlertThisMinute = true;
       playQueue.push(async ()=>{
         try{
-          await playText(DAILY_SHOPEE_TEXT);
+          await playText(DAILY_SHOPEE_TEXT, { ttsSpeed: DAILY_SHOPEE_TTS_SPEED });
           fetchLogsAfterDelay();
         }catch(e){
           if(isAutoplayBlockedError(e)){
             const retryKey = `retry-shopee-${tkey}`;
             queueAutoplayRetry(retryKey, async ()=>{
-              await playText(DAILY_SHOPEE_TEXT);
+              await playText(DAILY_SHOPEE_TEXT, { ttsSpeed: DAILY_SHOPEE_TTS_SPEED });
               playedShopeeReminderDate = tkey;
               fetchLogsAfterDelay();
             });
@@ -2578,6 +2579,7 @@ if (isset($_GET['text'])) {
       try{
         const status = await playText(DAILY_SHOPEE_TEXT, {
           trackAsTest: true,
+          ttsSpeed: DAILY_SHOPEE_TTS_SPEED,
           onStart: ()=>{ btnTestShopee.dataset.running='1'; setInlineTestButtonState(btnTestShopee, true); },
           onFinish: ()=>{ btnTestShopee.dataset.running='0'; setInlineTestButtonState(btnTestShopee, false); }
         });
