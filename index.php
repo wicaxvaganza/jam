@@ -439,6 +439,9 @@ if (isset($_GET['text'])) {
       <button id="btnTestPantunPulang" class="rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm hover:bg-slate-100">
         Test Pantun
       </button>
+      <button id="btnTestShopee" class="rounded-md border border-orange-200 bg-orange-50 px-3 py-1.5 text-sm text-orange-700 hover:bg-orange-100">
+        Test War Shopee
+      </button>
       <span class="text-sm text-slate-600 ml-1">
         • <span id="liveClock" class="font-medium text-slate-800">--:--:--</span>
       </span>
@@ -552,6 +555,8 @@ if (isset($_GET['text'])) {
     { id: 'datang_sat',     label: 'Presensi Datang (Sabtu)',   days: [6],       time: '06:45' },
     { id: 'pulang_sat',     label: 'Presensi Pulang (Sabtu)',   days: [6],       time: '12:30' }
   ];
+  const DAILY_SHOPEE_TIME = '08:55';
+  const DAILY_SHOPEE_TEXT = 'Persiapan, jangan lupa war telur Shopee ya.';
   const presensiPulangAlerts = presensiAlerts.filter(a => (a.label||'').toLowerCase().includes('pulang'));
   const pulangSyahduMessages = [
     'Selamat pulang ya, hati-hati di jalan dan jangan lupa berdoa.',
@@ -611,7 +616,8 @@ if (isset($_GET['text'])) {
         btnTest=document.getElementById('btnTest'),
         btnTestHalfHour=document.getElementById('btnTestHalfHour'),
         btnTestPulang5=document.getElementById('btnTestPulang5'),
-        btnTestPantunPulang=document.getElementById('btnTestPantunPulang');
+        btnTestPantunPulang=document.getElementById('btnTestPantunPulang'),
+        btnTestShopee=document.getElementById('btnTestShopee');
   const optTest1Min=document.getElementById('optTest1Min'),
         optHourly=document.getElementById('optHourly'),
         optHalfHourly=document.getElementById('optHalfHourly'),
@@ -670,6 +676,7 @@ if (isset($_GET['text'])) {
   let playedAlerts={},nextRunLabel=null;
   let playedPulangPlus5={},lastPulangSyahduIndex=-1;
   let playedPantunPulangPlus20={};
+  let playedShopeeReminderDate=null;
   let pendingPulangPlus5 = new Set(), pendingPantunPulangPlus20 = new Set(), lastPantunPulangIndex = -1;
   let countdownStuckReported = false; // untuk log countdown stuck
   let schedulerHeartbeatTs = Date.now();
@@ -1073,6 +1080,15 @@ if (isset($_GET['text'])) {
   }
   function nextTopOfMinuteTS(){const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate(),n.getHours(),n.getMinutes()+1,0,100).getTime();}
   function tsTodayFromHHMM(hhmm){const [H,M]=hhmm.split(':').map(Number);const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate(),H,M,0,100).getTime();}
+  function nextDailyShopeeTS(){
+    const now = Date.now();
+    let ts = tsTodayFromHHMM(DAILY_SHOPEE_TIME);
+    if(ts <= now + 1000){
+      const d = new Date(ts);
+      ts = new Date(d.getFullYear(),d.getMonth(),d.getDate()+1,d.getHours(),d.getMinutes(),0,100).getTime();
+    }
+    return ts;
+  }
   function todayKey(){return new Date().toISOString().slice(0,10);}
   function hhmmPlusMinutes(hhmm, addMin){
     const [H,M]=hhmm.split(':').map(Number);
@@ -1314,6 +1330,12 @@ if (isset($_GET['text'])) {
       seen.add(key);
       events.push({ ts, label });
     };
+
+    for(let addDay=0; addDay<=1; addDay++){
+      const base = new Date(now);
+      const dayDate = new Date(base.getFullYear(),base.getMonth(),base.getDate()+addDay);
+      addEvent(tsFromHHMMOnDate(dayDate.getTime(), DAILY_SHOPEE_TIME), 'Pengingat war telur Shopee');
+    }
 
     if(optHourly && optHourly.checked){
       let d = new Date(now + 1000);
@@ -1599,6 +1621,7 @@ if (isset($_GET['text'])) {
   // ====== Countdown calculator (merge all modes) ======
   function calculateNextRunWithLabel(){
     const candidates=[];
+    candidates.push({ts:nextDailyShopeeTS(),label:'Pengingat war telur Shopee'});
     if(optTest1Min && optTest1Min.checked) candidates.push({ts:nextTopOfMinuteTS(),label:'Pengumuman setiap menit'});
     if(optHourly && optHourly.checked)   candidates.push({ts:nextTopOfHourTS(),label:'Pengumuman setiap jam'});
     if(optHalfHourly && optHalfHourly.checked){
@@ -1801,6 +1824,29 @@ if (isset($_GET['text'])) {
     const tkey = todayKey();
     const playQueue = [];
     let hasOtherAlertThisMinute = false;
+
+    // Pengingat harian pukul 08.55, berlaku setiap hari.
+    if(hhmm === DAILY_SHOPEE_TIME && playedShopeeReminderDate !== tkey){
+      playedShopeeReminderDate = tkey;
+      hasOtherAlertThisMinute = true;
+      playQueue.push(async ()=>{
+        try{
+          await playText(DAILY_SHOPEE_TEXT);
+          fetchLogsAfterDelay();
+        }catch(e){
+          if(isAutoplayBlockedError(e)){
+            const retryKey = `retry-shopee-${tkey}`;
+            queueAutoplayRetry(retryKey, async ()=>{
+              await playText(DAILY_SHOPEE_TEXT);
+              playedShopeeReminderDate = tkey;
+              fetchLogsAfterDelay();
+            });
+          }
+          playedShopeeReminderDate = null;
+          console.error('Pengingat Shopee fireRun error', e);
+        }
+      });
+    }
 
     // 1) Sholat (5 waktu + ekstra)
     if (optSholat && optSholat.checked && sholatTimings) {
@@ -2187,6 +2233,7 @@ if (isset($_GET['text'])) {
       midnightResetTimeoutId = null;
       if(!started) return;
       playedAlerts={};
+      playedShopeeReminderDate=null;
       playedPulangPlus5={};
       pendingPulangPlus5 = new Set();
       playedSholat={};
@@ -2519,6 +2566,24 @@ if (isset($_GET['text'])) {
         if(status === 'ok') fetchLogsAfterDelay();
       }catch(e){
         alert('Gagal test Pulang+5: '+e);
+      }
+    });
+  }
+  if(btnTestShopee){
+    btnTestShopee.addEventListener('click', async ()=>{
+      if(btnTestShopee.dataset.running === '1'){
+        stopCurrentPlayback();
+        return;
+      }
+      try{
+        const status = await playText(DAILY_SHOPEE_TEXT, {
+          trackAsTest: true,
+          onStart: ()=>{ btnTestShopee.dataset.running='1'; setInlineTestButtonState(btnTestShopee, true); },
+          onFinish: ()=>{ btnTestShopee.dataset.running='0'; setInlineTestButtonState(btnTestShopee, false); }
+        });
+        if(status === 'ok') fetchLogsAfterDelay();
+      }catch(e){
+        alert('Gagal test War Shopee: '+e);
       }
     });
   }
