@@ -556,7 +556,7 @@ if (isset($_GET['text'])) {
     { id: 'pulang_sat',     label: 'Presensi Pulang (Sabtu)',   days: [6],       time: '12:30' }
   ];
   const DAILY_SHOPEE_TIME = '08:55';
-  const DAILY_SHOPEE_TEXT = 'Kediri beli terasi... Jangan lupa, war telur sopi!';
+  const DAILY_SHOPEE_TEXT = 'Ke Kediri beli terasi... Jangan lupa, war telur sopi!';
   const DAILY_SHOPEE_TTS_SPEED = 0.9;
   const presensiPulangAlerts = presensiAlerts.filter(a => (a.label||'').toLowerCase().includes('pulang'));
   const pulangSyahduMessages = [
