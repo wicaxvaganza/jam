@@ -463,6 +463,9 @@ if (isset($_GET['text'])) {
         <input type="checkbox" id="optSholat" checked class="peer/sholat hidden">
         <label for="optSholat" class="px-2.5 py-1.5 text-xs rounded-md border bg-white hover:bg-slate-50 cursor-pointer border-slate-200 text-slate-700 peer-checked/sholat:bg-emerald-600 peer-checked/sholat:text-white peer-checked/sholat:border-emerald-600">Sholat</label>
 
+        <input type="checkbox" id="optShopee" checked class="peer/shopee hidden">
+        <label for="optShopee" class="px-2.5 py-1.5 text-xs rounded-md border bg-white hover:bg-slate-50 cursor-pointer border-slate-200 text-slate-700 peer-checked/shopee:bg-orange-600 peer-checked/shopee:text-white peer-checked/shopee:border-orange-600">Shopee 08:58</label>
+
         <!-- Auto Reload -->
         <input type="checkbox" id="optAutoReload" checked class="peer/reload hidden">
         <label for="optAutoReload" class="px-2.5 py-1.5 text-xs rounded-md border bg-white hover:bg-slate-50 cursor-pointer border-slate-200 text-slate-700 peer-checked/reload:bg-amber-500 peer-checked/reload:text-white peer-checked/reload:border-amber-500">
@@ -502,6 +505,12 @@ if (isset($_GET['text'])) {
       <!-- Panel Presensi -->
       <div id="panelPresensi" role="tabpanel" class="mt-3">
         <div class="flex flex-col gap-2" id="presensiList"></div>
+        <div class="mt-2 flex items-center gap-2">
+          <div class="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800">
+            08:58 — Pengingat war telur sopi (setiap hari)
+          </div>
+          <span id="shopeeAlertStatus" class="ml-auto rounded-md border px-3 py-1.5 text-xs font-semibold">Aktif</span>
+        </div>
       </div>
 
       <!-- Panel Sholat -->
@@ -624,6 +633,7 @@ if (isset($_GET['text'])) {
         optHalfHourly=document.getElementById('optHalfHourly'),
         optPresensi=document.getElementById('optPresensi'),
         optSholat=document.getElementById('optSholat'),
+        optShopee=document.getElementById('optShopee'),
         optAutoReload=document.getElementById('optAutoReload');
   const countdownEl=document.getElementById('countdown'),
         statusBadge=document.getElementById('statusBadge'),
@@ -636,6 +646,7 @@ if (isset($_GET['text'])) {
         tabLogClient=document.getElementById('tabLogClient'),
         liveClockEl=document.getElementById('liveClock'),
         reloadInfoEl=document.getElementById('reloadInfo');
+  const shopeeAlertStatusEl=document.getElementById('shopeeAlertStatus');
   const sholatListEl=document.getElementById('sholatList');
 
   // Tabs
@@ -710,6 +721,7 @@ if (isset($_GET['text'])) {
         halfHourly: !!(optHalfHourly && optHalfHourly.checked),
         presensi: !!(optPresensi && optPresensi.checked),
         sholat: !!(optSholat && optSholat.checked),
+        shopee: !!(optShopee && optShopee.checked),
         autoReload: !!(optAutoReload && optAutoReload.checked)
       };
       localStorage.setItem(CHECKBOX_STATE_KEY, JSON.stringify(state));
@@ -726,6 +738,7 @@ if (isset($_GET['text'])) {
       if(optHalfHourly && typeof s.halfHourly === 'boolean') optHalfHourly.checked = s.halfHourly;
       if(optPresensi && typeof s.presensi === 'boolean') optPresensi.checked = s.presensi;
       if(optSholat && typeof s.sholat === 'boolean') optSholat.checked = s.sholat;
+      if(optShopee && typeof s.shopee === 'boolean') optShopee.checked = s.shopee;
       if(optAutoReload && typeof s.autoReload === 'boolean') optAutoReload.checked = s.autoReload;
     }catch(_){}
   }
@@ -1332,10 +1345,12 @@ if (isset($_GET['text'])) {
       events.push({ ts, label });
     };
 
-    for(let addDay=0; addDay<=1; addDay++){
-      const base = new Date(now);
-      const dayDate = new Date(base.getFullYear(),base.getMonth(),base.getDate()+addDay);
-      addEvent(tsFromHHMMOnDate(dayDate.getTime(), DAILY_SHOPEE_TIME), 'Pengingat war telur Shopee');
+    if(optShopee && optShopee.checked){
+      for(let addDay=0; addDay<=1; addDay++){
+        const base = new Date(now);
+        const dayDate = new Date(base.getFullYear(),base.getMonth(),base.getDate()+addDay);
+        addEvent(tsFromHHMMOnDate(dayDate.getTime(), DAILY_SHOPEE_TIME), 'Pengingat war telur Shopee');
+      }
     }
 
     if(optHourly && optHourly.checked){
@@ -1622,7 +1637,7 @@ if (isset($_GET['text'])) {
   // ====== Countdown calculator (merge all modes) ======
   function calculateNextRunWithLabel(){
     const candidates=[];
-    candidates.push({ts:nextDailyShopeeTS(),label:'Pengingat war telur Shopee'});
+    if(optShopee && optShopee.checked) candidates.push({ts:nextDailyShopeeTS(),label:'Pengingat war telur Shopee'});
     if(optTest1Min && optTest1Min.checked) candidates.push({ts:nextTopOfMinuteTS(),label:'Pengumuman setiap menit'});
     if(optHourly && optHourly.checked)   candidates.push({ts:nextTopOfHourTS(),label:'Pengumuman setiap jam'});
     if(optHalfHourly && optHalfHourly.checked){
@@ -1827,7 +1842,7 @@ if (isset($_GET['text'])) {
     let hasOtherAlertThisMinute = false;
 
     // Pengingat harian pukul 08.58, berlaku setiap hari.
-    if(hhmm === DAILY_SHOPEE_TIME && playedShopeeReminderDate !== tkey){
+    if(optShopee && optShopee.checked && hhmm === DAILY_SHOPEE_TIME && playedShopeeReminderDate !== tkey){
       playedShopeeReminderDate = tkey;
       hasOtherAlertThisMinute = true;
       playQueue.push(async ()=>{
@@ -2278,6 +2293,10 @@ if (isset($_GET['text'])) {
     const baseDate = new Date(baseTs);
     const baseDay = baseDate.getDay();
 
+    if(optShopee && optShopee.checked){
+      pick(tsFromHHMMOnDate(baseTs, DAILY_SHOPEE_TIME), 'Pengingat war telur Shopee');
+    }
+
     // Hourly
     if(optHourly && optHourly.checked){
       const hTs = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), baseDate.getHours(), 0, 0, 0).getTime();
@@ -2618,11 +2637,23 @@ if (isset($_GET['text'])) {
     if(optPresensi && optPresensi.checked) modes.push('pulang+5-syahdu');
     if(optPresensi && optPresensi.checked) modes.push('pulang+20-pantun');
     if(optSholat && optSholat.checked) modes.push('sholat-alerts');
+    if(optShopee && optShopee.checked) modes.push('shopee-08:58-alert');
     if(optAutoReload && optAutoReload.checked) modes.push('auto-reload');
     modeInfo.textContent = modes.length ? modes.join(' + ') : 'None';
+
+    if(shopeeAlertStatusEl){
+      const active = !!(optShopee && optShopee.checked);
+      shopeeAlertStatusEl.textContent = active ? 'Aktif' : 'Tidak aktif';
+      shopeeAlertStatusEl.classList.toggle('border-emerald-200', active);
+      shopeeAlertStatusEl.classList.toggle('bg-emerald-50', active);
+      shopeeAlertStatusEl.classList.toggle('text-emerald-700', active);
+      shopeeAlertStatusEl.classList.toggle('border-slate-200', !active);
+      shopeeAlertStatusEl.classList.toggle('bg-slate-100', !active);
+      shopeeAlertStatusEl.classList.toggle('text-slate-500', !active);
+    }
   }
 
-  [optTest1Min,optHourly,optHalfHourly,optPresensi,optSholat,optAutoReload].forEach(el=>{
+  [optTest1Min,optHourly,optHalfHourly,optPresensi,optSholat,optShopee,optAutoReload].forEach(el=>{
     if(!el) return;
     el.addEventListener('change',()=>{
       saveCheckboxState();
